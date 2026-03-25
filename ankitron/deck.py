@@ -32,6 +32,7 @@ class Field:
     pk: PKStrategy | None = None
     internal: bool = False
     unused_ok: bool = False
+    optional: bool = False
 
     # Set automatically by __set_name__
     name: str | None = dc_field(default=None, repr=False)
@@ -65,6 +66,7 @@ class Field:
         kind: FieldKind = FieldKind.TEXT,
         internal: bool = False,
         unused_ok: bool = False,
+        optional: bool = False,
     ) -> Field:
         """Create a derived field whose value is computed from this field's value."""
         return Field(
@@ -72,6 +74,7 @@ class Field:
             fmt=fmt,
             internal=internal,
             unused_ok=unused_ok,
+            optional=optional,
             _parent=self,
             _transform=transform,
         )

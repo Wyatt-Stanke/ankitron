@@ -69,9 +69,12 @@ class WikidataSource:
                 if value_type == PropertyValueType.ENTITY:
                     select_vars.append(f"?{var_name}Label")
                     need_label_service = True
-                where_clauses.append(
-                    f"  OPTIONAL {{ ?item wdt:{source_key} ?{var_name} . }}"
-                )
+                if field.optional:
+                    where_clauses.append(
+                        f"  OPTIONAL {{ ?item wdt:{source_key} ?{var_name} . }}"
+                    )
+                else:
+                    where_clauses.append(f"  ?item wdt:{source_key} ?{var_name} .")
 
         # Always include label service if any entity-valued or special fields
         if need_label_service:
