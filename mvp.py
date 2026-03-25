@@ -1,6 +1,6 @@
 from ankitron import Deck, Card, Tag, AnkiTemplate, PKStrategy
 from ankitron.sources import WikidataSource
-from ankitron.wikidata import P, Q, WikidataQuery
+from ankitron.sources.wikidata import P, Q, WikidataQuery
 
 
 class USStates(Deck):

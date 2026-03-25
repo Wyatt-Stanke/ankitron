@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from ankitron.wikidata.classes import WikidataClass
+from ankitron.sources.wikidata.classes import WikidataClass
 
 
 class QueryType(Enum):

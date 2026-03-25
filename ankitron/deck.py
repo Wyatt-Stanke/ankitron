@@ -9,7 +9,7 @@ from rich.table import Table
 from rich import box
 
 from ankitron.enums import AnkiTemplate, FieldKind, PKStrategy
-from ankitron.wikidata.properties import PropertyValueType
+from ankitron.sources.wikidata.properties import PropertyValueType
 from ankitron.cache import Cache
 from ankitron.logging import (
     section_header,

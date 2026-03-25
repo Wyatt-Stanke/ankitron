@@ -6,8 +6,8 @@ import requests
 
 from ankitron.cache import Cache
 from ankitron.enums import PKStrategy
-from ankitron.wikidata.properties import WikidataProperty, PropertyValueType
-from ankitron.wikidata.query import WikidataQuery, QueryType
+from ankitron.sources.wikidata.properties import WikidataProperty, PropertyValueType
+from ankitron.sources.wikidata.query import WikidataQuery, QueryType
 from ankitron.logging import (
     section_header,
     log_info,

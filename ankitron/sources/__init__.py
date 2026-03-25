@@ -1,3 +1,3 @@
-from ankitron.sources.wikidata import WikidataSource
+from ankitron.sources.wikidata.wikidata import WikidataSource
 
 __all__ = ["WikidataSource"]
