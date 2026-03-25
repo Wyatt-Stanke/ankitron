@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import Any
 
 
+# TODO: Generate a cache dir that is best-practice crossplatform (Windows, MacOS, and Linux).
 CACHE_DIR = Path.home() / ".cache" / "ankitron"
+# TODO: The TTL should be per-cache item rather than per-cache object. The put() function should accept a TTL, and the default of the parameter should be DEFAULT_TTL.
 DEFAULT_TTL = 7 * 24 * 3600  # 7 days in seconds
 
 
