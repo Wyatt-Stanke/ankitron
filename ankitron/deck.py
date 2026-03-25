@@ -236,11 +236,10 @@ class Deck:
 
         # Validation: Card subclasses have front and back
         for card_cls in cards:
-            if not hasattr(card_cls, "front"):
+            if not (hasattr(card_cls, "front") and hasattr(card_cls, "back")):
                 raise TypeError(
                     f"{cls.__name__}.{card_cls.__name__}: Card subclass must define both 'front' and 'back'."
                 )
-            if not hasattr(card_cls, "back"):
                 raise TypeError(
                     f"{cls.__name__}.{card_cls.__name__}: Card subclass must define both 'front' and 'back'."
                 )
