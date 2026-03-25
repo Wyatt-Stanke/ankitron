@@ -1,0 +1,12 @@
+[project]
+name = "ankitron"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["genanki", "requests", "rich"]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-mock", "types-requests"]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
