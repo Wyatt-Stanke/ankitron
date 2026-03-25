@@ -97,6 +97,44 @@ class Card:
     back: str
 
 
+@dataclass
+class Tag:
+    """A dynamic tag that resolves per-row at export time."""
+
+    _resolve_fn: Callable[[dict], str]
+    prefix: str | None = None
+    _field_name: str | None = (
+        None  # Set for from_field tags to track the field reference
+    )
+
+    @staticmethod
+    def from_field(field: Field, prefix: str | None = None) -> "Tag":
+        """
+        Create a tag from a field's value. The field's resolved value
+        for each row becomes the tag string.
+        """
+        return Tag(
+            _resolve_fn=lambda row: row[field.name],
+            prefix=prefix,
+            _field_name=field.name,
+        )
+
+    @staticmethod
+    def computed(transform: Callable[[dict], str], prefix: str | None = None) -> "Tag":
+        """
+        Create a tag from a function. The function receives the full
+        row dict and must return a string.
+        """
+        return Tag(_resolve_fn=transform, prefix=prefix)
+
+    def resolve(self, row: dict) -> str:
+        """Resolve this tag for a given row of data."""
+        value = self._resolve_fn(row)
+        if self.prefix:
+            return f"{self.prefix}::{value}"
+        return value
+
+
 # Regex to find {{field_name}} references, excluding Anki special syntax
 # like {{FrontSide}}, {{#field}}, {{/field}}, {{^field}}, {{type:field}}
 _FIELD_REF_PATTERN = re.compile(r"\{\{(?!FrontSide|#|/|\^|type:)(\w+)\}\}")
@@ -160,6 +198,7 @@ class Deck:
     _visible_fields: list[tuple[str, Field]]
     _derived_order: list[tuple[str, Field]]
     _all_fields: list[tuple[str, Field]]
+    _deck_tags: list[str | Tag]
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -283,16 +322,33 @@ class Deck:
                 f"Found {len(pk_fields)} ({pk_names})."
             )
 
+        # Validation: tags list
+        field_names = {name for name, _ in fields}
+        tag_list = getattr(cls, "tags", [])
+        if tag_list:
+            for tag_entry in tag_list:
+                if not isinstance(tag_entry, (str, Tag)):
+                    raise TypeError(
+                        f"{cls.__name__}: tags list contains invalid entry of type {type(tag_entry).__name__}. Expected str or Tag."
+                    )
+                # Validate Tag.from_field references
+                if isinstance(tag_entry, Tag) and tag_entry._field_name:
+                    if tag_entry._field_name not in field_names:
+                        raise TypeError(
+                            f"{cls.__name__}: tag references field '{tag_entry._field_name}', which is not declared on this deck."
+                        )
+
         # Store collected metadata on the class
         cls._deck_fields = [fld for _, fld in fields]
         cls._deck_cards = cards
         cls._deck_sources = [src for _, src in sources]
-        cls._deck_name = cls.deck_name if hasattr(cls, "deck_name") else cls.__name__
+        cls._deck_name = getattr(cls, "deck_name", cls.__name__)
         cls._field_attrs = [name for name, _ in fields]
         cls._pk_field_attr = pk_fields[0][0]
         cls._derived_order = derived_order
         cls._visible_fields = [(name, fld) for name, fld in fields if not fld.internal]
         cls._all_fields = fields
+        cls._deck_tags = getattr(cls, "tags", [])
         cls._fields_by_source = {}
 
         # Group source (non-derived) fields by source

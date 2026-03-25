@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import genanki
 import html
+import re
 
 from ankitron.identity import generate_deck_id, generate_model_id, generate_note_id
 from ankitron.logging import (
@@ -10,12 +11,51 @@ from ankitron.logging import (
     log_success,
     make_progress,
     console,
+    log_warn,
 )
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ankitron.deck import Deck
+    from ankitron.deck import Deck, Tag
+
+
+def sanitize_tag(tag: str) -> str:
+    """
+    Sanitize a tag string for Anki.
+    - Replace spaces with hyphens
+    - Strip leading/trailing whitespace
+    - Collapse consecutive hyphens
+    """
+    tag = tag.strip()
+    tag = re.sub(r"\s+", "-", tag)
+    tag = re.sub(r"-+", "-", tag)
+    return tag
+
+
+def resolve_tags(tag_list: list[str | "Tag"], row: dict) -> list[str]:
+    """
+    Resolve a mixed list of static strings and Tag objects
+    into a flat list of sanitized tag strings for a single row.
+    """
+    from ankitron.deck import Tag
+
+    resolved = []
+    for tag in tag_list:
+        try:
+            if isinstance(tag, str):
+                resolved.append(sanitize_tag(tag))
+            elif isinstance(tag, Tag):
+                value = tag.resolve(row)
+                resolved.append(sanitize_tag(value))
+        except Exception as exc:
+            # Log warning and skip tag for this note
+            pk_val = row.get("_pk_", row.get("id", "?"))
+            log_warn(
+                f"Tag resolution failed for row '{pk_val}': {type(exc).__name__}: {exc}. Skipping tag."
+            )
+            continue
+    return resolved
 
 
 def build_genanki_model(deck_cls: type[Deck]) -> genanki.Model:
@@ -88,21 +128,49 @@ def export_deck(deck_instance: Deck, path: str) -> None:
     # Build field attr name list in declaration order, excluding internal
     visible_attrs = [name for name, f in deck_cls._all_fields if not f.internal]
 
+    # Resolve tags
+    if deck_cls._deck_tags:
+        static_count = sum(1 for tag in deck_cls._deck_tags if isinstance(tag, str))
+        computed_count = sum(
+            1 for tag in deck_cls._deck_tags if not isinstance(tag, str)
+        )
+        log_info(f"Resolving tags...")
+        log_info(
+            f"  {len(deck_cls._deck_tags)} tag rules ({static_count} static, {computed_count} computed)"
+        )
+
     with make_progress() as progress:
         task = progress.add_task("Creating notes", total=len(deck_instance._data))
+        all_tags_set: set[str] = set()
+
         for row in deck_instance._data:
             pk_val = row.get(f"_pk_{pk_field_attr}", row.get(pk_field_attr, ""))
             note_id = generate_note_id(deck_cls.__qualname__, pk_val)
 
             field_values = [html.escape(row.get(attr, "")) for attr in visible_attrs]
 
+            # Resolve tags for this row
+            tags_to_add = []
+            if deck_cls._deck_tags:
+                tags_to_add = resolve_tags(deck_cls._deck_tags, row)
+
+            all_tags_set.update(tags_to_add)
+
             note = genanki.Note(
                 model=model,
                 fields=field_values,
                 guid=note_id,
+                tags=tags_to_add,
             )
             gk_deck.add_note(note)
             progress.advance(task)
+
+    # Log tag summary
+    if deck_cls._deck_tags:
+        log_info(
+            f"  {len(all_tags_set)} unique tags across {len(deck_instance._data)} notes"
+        )
+        log_success("Tags resolved")
 
     genanki.Package(gk_deck).write_to_file(path)
     log_success(f"Exported {len(deck_instance._data)} notes to [bold]{path}[/bold]")
