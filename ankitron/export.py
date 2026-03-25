@@ -150,11 +150,14 @@ def export_deck(deck_instance: Deck, path: str) -> None:
             field_values = [html.escape(row.get(attr, "")) for attr in visible_attrs]
 
             # Resolve tags for this row
-            tags_to_add = []
+            tags_to_add = ["ankitron"] # Always add "ankitron" tag
             if deck_cls._deck_tags:
-                tags_to_add = resolve_tags(deck_cls._deck_tags, row)
+                tags_to_add.extend(resolve_tags(deck_cls._deck_tags, row))
 
             all_tags_set.update(tags_to_add)
+
+            # Deduplicate
+            tags_to_add = list(dict.fromkeys(tags_to_add))
 
             note = genanki.Note(
                 model=model,
