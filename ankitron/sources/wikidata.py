@@ -109,7 +109,9 @@ class WikidataSource:
         resp = requests.get(
             WIKIDATA_SPARQL_ENDPOINT,
             params={"query": sparql, "format": "json"},
-            headers={"User-Agent": "ankitron/0.1.0 (https://github.com/ankitron)"},
+            headers={
+                "User-Agent": "ankitron/0.1.0 (https://github.com/Wyatt-Stanke/ankitron)"
+            },
             timeout=60,
         )
         resp.raise_for_status()
