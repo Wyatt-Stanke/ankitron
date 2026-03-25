@@ -36,7 +36,7 @@ def build_genanki_model(deck_cls: type[Deck]) -> genanki.Model:
 
     return genanki.Model(
         model_id=model_id,
-        name=f"ankitron::{deck_cls._deck_name}",
+        name=f"ankitron::{deck_cls._deck_name.lstrip('::').lstrip('ankitron::')}",
         fields=gk_fields,
         templates=gk_templates,
     )
@@ -45,18 +45,18 @@ def build_genanki_model(deck_cls: type[Deck]) -> genanki.Model:
 def export_deck(deck_instance: Deck, path: str) -> None:
     """Export a Deck instance to an .apkg file."""
     deck_cls = deck_instance.__class__
-    section_header(f"Export: {deck_cls.__name__}")
+    section_header(f"Export: {deck_cls._deck_name}")
 
     # Phase 3 validation
     if not hasattr(deck_instance, "_data") or deck_instance._data is None:
         raise RuntimeError(
-            f"Deck '{deck_cls.__name__}' has no data loaded. "
+            f"Deck '{deck_cls._deck_name}' has no data loaded. "
             f"Call deck.fetch() before deck.export()."
         )
 
     if not deck_instance._data:
         raise RuntimeError(
-            f"Deck '{deck_cls.__name__}' has no rows of data. "
+            f"Deck '{deck_cls._deck_name}' has no rows of data. "
             f"fetch() returned 0 results."
         )
 
@@ -74,7 +74,7 @@ def export_deck(deck_instance: Deck, path: str) -> None:
     if duplicates:
         dup_str = ", ".join(f"{k!r} ({cnt}x)" for k, cnt in duplicates.items())
         raise RuntimeError(
-            f"Deck '{deck_cls.__name__}' has duplicate primary key values: {dup_str}. "
+            f"Deck '{deck_cls._deck_name}' has duplicate primary key values: {dup_str}. "
             f"Each row must have a unique PK."
         )
 
