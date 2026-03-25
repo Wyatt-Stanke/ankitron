@@ -86,7 +86,8 @@ class Card:
 
     WARNING: The declaration order of Card subclasses determines the Anki
     card template ordinal. Changing the order will misidentify cards and
-    destroy review history.
+    cause review history to be misassociated. Always add new Card types at
+    the end of the class body.
     """
 
     front: str

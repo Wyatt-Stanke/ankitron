@@ -22,6 +22,10 @@ class USStates(Deck):
         front = "What is the capital of {{state}}?"
         back = "{{capital}}"
 
+    class capitals_reverse(Card):
+        front = "Which US state has {{capital}} as its capital?"
+        back = "{{state}}"
+
     class populations(Card):
         front = "Approximately how many people live in {{state}}?"
         back = "{{approximate_population}}"
