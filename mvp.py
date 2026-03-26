@@ -18,6 +18,7 @@ class USStates(Deck):
         fmt="~{:,.0f}",
     )
 
+    # TODO: The card ordering should be made stable (somehow) so adding or reordering cards to a deck won't erase progress.
     class capitals(Card):
         front = "What is the capital of {{state}}?"
         back = "{{capital}}"
