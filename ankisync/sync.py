@@ -16,7 +16,7 @@ from anki.import_export_pb2 import (
     ImportResponse,
 )
 
-from ankisync.http_client import AnkiWebClient, SyncError, SyncMeta
+from ankisync.http_client import AnkiWebClient, SyncMeta
 
 DEFAULT_COLLECTION_DIR = Path.home() / ".ankisync"
 DEFAULT_COLLECTION_PATH = DEFAULT_COLLECTION_DIR / "collection.anki2"
@@ -259,6 +259,7 @@ def run_sync(
     dry_run: bool = False,
     force_full_upload: bool = False,
     force_full_download: bool = False,
+    full_download_import_sync: bool = False,
     allow_updates: bool = False,
 ) -> SyncResult:
     """High-level entry point: import .apkg files and sync to AnkiWeb."""
@@ -268,10 +269,42 @@ def run_sync(
     print(f"Opening collection at {col_display}...")
     col = open_collection(collection_path)
 
+    client: AnkiWebClient | None = None
+
     try:
+        if full_download_import_sync:
+            if dry_run:
+                print(
+                    "\n[dry-run] Would download remote collection before importing FILEs"
+                )
+            else:
+                print("\nLogging in to AnkiWeb...")
+                client = AnkiWebClient(endpoint)
+                client.login(username, password)
+                print("  Logged in successfully.")
+
+                print("\nChecking sync status for pre-import download...")
+                remote_meta = client.meta()
+
+                pre_result = sync_to_ankiweb(
+                    col,
+                    client,
+                    remote_meta,
+                    dry_run=False,
+                    force_full_download=True,
+                )
+                if pre_result.server_message:
+                    result.server_message = pre_result.server_message
+
+                # Full download closes and replaces the collection file; reopen it before import.
+                col = open_collection(collection_path)
+                print("  Reopened local collection after full download.")
+
         for apkg_path in apkg_files:
             print(f"\nImporting {apkg_path}...")
-            log = import_apkg(col, apkg_path, dry_run=dry_run, allow_updates=allow_updates)
+            log = import_apkg(
+                col, apkg_path, dry_run=dry_run, allow_updates=allow_updates
+            )
             result.imported_files.append(apkg_path)
 
             if log is not None:
@@ -281,7 +314,9 @@ def run_sync(
                 result.notes_added += n_new
                 result.notes_updated += n_updated
                 result.notes_duplicate += n_dup
-                print(f"  Added: {n_new}, Updated: {n_updated}, Duplicates (skipped): {n_dup}")
+                print(
+                    f"  Added: {n_new}, Updated: {n_updated}, Duplicates (skipped): {n_dup}"
+                )
 
         note_count = col.note_count()
         card_count = col.card_count()
@@ -291,10 +326,11 @@ def run_sync(
             print("\n[dry-run] Would sync to AnkiWeb (skipping login)")
             result.sync_action = "dry-run (skipped)"
         else:
-            print("\nLogging in to AnkiWeb...")
-            client = AnkiWebClient(endpoint)
-            client.login(username, password)
-            print("  Logged in successfully.")
+            if client is None:
+                print("\nLogging in to AnkiWeb...")
+                client = AnkiWebClient(endpoint)
+                client.login(username, password)
+                print("  Logged in successfully.")
 
             print("\nChecking sync status...")
             remote_meta = client.meta()

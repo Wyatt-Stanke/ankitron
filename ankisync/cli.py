@@ -41,7 +41,10 @@ def _get_credentials(args: argparse.Namespace) -> tuple[str, str]:
             username = input("AnkiWeb username (email): ").strip()
         else:
             print("Error: No username provided.", file=sys.stderr)
-            print("Set ANKIWEB_USERNAME env var, use -u, or run interactively.", file=sys.stderr)
+            print(
+                "Set ANKIWEB_USERNAME env var, use -u, or run interactively.",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
     if not password:
@@ -49,7 +52,10 @@ def _get_credentials(args: argparse.Namespace) -> tuple[str, str]:
             password = getpass.getpass("AnkiWeb password: ")
         else:
             print("Error: No password provided.", file=sys.stderr)
-            print("Set ANKIWEB_PASSWORD env var, use -p, or run interactively.", file=sys.stderr)
+            print(
+                "Set ANKIWEB_PASSWORD env var, use -p, or run interactively.",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
     if not username or not password:
@@ -75,6 +81,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  ankisync deck.apkg --dry-run      Preview without making changes\n"
             "  ankisync --full-upload             Replace remote with local collection\n"
             "  ankisync --full-download           Replace local with remote collection\n"
+            "  ankisync deck.apkg --full-download-import-sync\n"
+            "                                   Download remote, import deck, then sync\n"
             "\n"
             "credentials:\n"
             "  Provide via -u/-p flags, ANKIWEB_USERNAME/ANKIWEB_PASSWORD env vars,\n"
@@ -94,7 +102,8 @@ def build_parser() -> argparse.ArgumentParser:
     auth_group.add_argument("-p", "--password", help="AnkiWeb password")
 
     parser.add_argument(
-        "-c", "--collection",
+        "-c",
+        "--collection",
         metavar="PATH",
         help="local collection path (default: ~/.ankisync/collection.anki2)",
     )
@@ -115,10 +124,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="replace the local collection with remote data",
     )
+    sync_exclusive.add_argument(
+        "--full-download-import-sync",
+        action="store_true",
+        help="download remote first, then import FILEs, then sync",
+    )
 
     safety_group = parser.add_argument_group("safety")
     safety_group.add_argument(
-        "-n", "--dry-run",
+        "-n",
+        "--dry-run",
         action="store_true",
         help="preview what would happen without making changes",
     )
@@ -157,9 +172,21 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if not args.files and not args.full_upload and not args.full_download:
+    if (
+        not args.files
+        and not args.full_upload
+        and not args.full_download
+        and not args.full_download_import_sync
+    ):
         parser.print_help()
         return 0
+
+    if args.full_download_import_sync and not args.files:
+        print(
+            "Error: --full-download-import-sync requires at least one .apkg FILE.",
+            file=sys.stderr,
+        )
+        return 1
 
     for f in args.files:
         if not os.path.isfile(f):
@@ -184,6 +211,7 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             force_full_upload=args.full_upload,
             force_full_download=args.full_download,
+            full_download_import_sync=args.full_download_import_sync,
             allow_updates=args.allow_updates,
         )
         _print_summary(result)
