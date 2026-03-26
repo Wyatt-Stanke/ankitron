@@ -11,8 +11,7 @@ from ankisync.sync import SyncResult, _is_interactive, run_sync
 
 
 def _load_env_file() -> None:
-    """Load variables from .env file in the current directory if it exists.
-    Does not override already-set environment variables."""
+    """Load variables from .env file in the current directory if it exists."""
     env_path = os.path.join(os.getcwd(), ".env")
     if not os.path.isfile(env_path):
         return
@@ -26,7 +25,6 @@ def _load_env_file() -> None:
             key, _, value = line.partition("=")
             key = key.strip()
             value = value.strip()
-            # Remove surrounding quotes if present
             if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
                 value = value[1:-1]
             if key not in os.environ:
@@ -43,7 +41,7 @@ def _get_credentials(args: argparse.Namespace) -> tuple[str, str]:
             username = input("AnkiWeb username (email): ").strip()
         else:
             print("Error: No username provided.", file=sys.stderr)
-            print("Set ANKIWEB_USERNAME env var, use --username, or run interactively.", file=sys.stderr)
+            print("Set ANKIWEB_USERNAME env var, use -u, or run interactively.", file=sys.stderr)
             sys.exit(1)
 
     if not password:
@@ -51,7 +49,7 @@ def _get_credentials(args: argparse.Namespace) -> tuple[str, str]:
             password = getpass.getpass("AnkiWeb password: ")
         else:
             print("Error: No password provided.", file=sys.stderr)
-            print("Set ANKIWEB_PASSWORD env var, use --password, or run interactively.", file=sys.stderr)
+            print("Set ANKIWEB_PASSWORD env var, use -p, or run interactively.", file=sys.stderr)
             sys.exit(1)
 
     if not username or not password:
@@ -64,11 +62,23 @@ def _get_credentials(args: argparse.Namespace) -> tuple[str, str]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ankisync",
-        description="Import .apkg files into a local Anki collection and sync to AnkiWeb.",
+        description=(
+            "Import .apkg files and sync to AnkiWeb.\n\n"
+            "By default, ankisync only adds new cards and never overwrites or\n"
+            "deletes anything on AnkiWeb. Use --full-upload or --full-download\n"
+            "to explicitly replace data when needed."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "Credentials can be provided via --username/--password flags, "
-            "ANKIWEB_USERNAME/ANKIWEB_PASSWORD environment variables, "
-            "or entered interactively when running in a terminal."
+            "examples:\n"
+            "  ankisync deck.apkg               Import and push new cards\n"
+            "  ankisync deck.apkg --dry-run      Preview without making changes\n"
+            "  ankisync --full-upload             Replace remote with local collection\n"
+            "  ankisync --full-download           Replace local with remote collection\n"
+            "\n"
+            "credentials:\n"
+            "  Provide via -u/-p flags, ANKIWEB_USERNAME/ANKIWEB_PASSWORD env vars,\n"
+            "  a .env file in the current directory, or enter interactively."
         ),
     )
 
@@ -76,55 +86,46 @@ def build_parser() -> argparse.ArgumentParser:
         "files",
         nargs="*",
         metavar="FILE",
-        help=".apkg files to import before syncing (optional)",
+        help=".apkg files to import before syncing",
     )
 
-    # Auth
     auth_group = parser.add_argument_group("authentication")
-    auth_group.add_argument(
-        "-u", "--username",
-        help="AnkiWeb username/email (or set ANKIWEB_USERNAME)",
-    )
-    auth_group.add_argument(
-        "-p", "--password",
-        help="AnkiWeb password (or set ANKIWEB_PASSWORD)",
-    )
+    auth_group.add_argument("-u", "--username", help="AnkiWeb email")
+    auth_group.add_argument("-p", "--password", help="AnkiWeb password")
 
-    # Collection
     parser.add_argument(
         "-c", "--collection",
         metavar="PATH",
-        help="Path to local collection file (default: ~/.ankisync/collection.anki2)",
+        help="local collection path (default: ~/.ankisync/collection.anki2)",
+    )
+    parser.add_argument(
+        "--endpoint",
+        help="custom sync server URL (default: AnkiWeb)",
     )
 
-    # Sync options
-    sync_group = parser.add_argument_group("sync options")
-    sync_group.add_argument(
+    sync_group = parser.add_argument_group("sync mode (mutually exclusive)")
+    sync_exclusive = sync_group.add_mutually_exclusive_group()
+    sync_exclusive.add_argument(
         "--full-upload",
         action="store_true",
-        help="Force full upload, replacing the entire remote collection",
+        help="replace the entire remote collection with local data",
     )
-    sync_group.add_argument(
-        "--no-media",
+    sync_exclusive.add_argument(
+        "--full-download",
         action="store_true",
-        help="Skip media file sync",
-    )
-    sync_group.add_argument(
-        "--endpoint",
-        help="Custom sync server URL (default: AnkiWeb)",
+        help="replace the local collection with remote data",
     )
 
-    # Safety options
-    safety_group = parser.add_argument_group("safety options")
+    safety_group = parser.add_argument_group("safety")
     safety_group.add_argument(
         "-n", "--dry-run",
         action="store_true",
-        help="Show what would happen without making any changes",
+        help="preview what would happen without making changes",
     )
     safety_group.add_argument(
         "--allow-updates",
         action="store_true",
-        help="Allow updating existing notes (default: add-only, never overwrite)",
+        help="allow updating existing notes during import (default: add-only)",
     )
 
     return parser
@@ -137,14 +138,15 @@ def _print_summary(result: SyncResult) -> None:
     print(f"{'=' * 50}")
 
     if result.imported_files:
-        print(f"  Files processed:   {len(result.imported_files)}")
+        print(f"  Files imported:    {len(result.imported_files)}")
         print(f"  Notes added:       {result.notes_added}")
-        print(f"  Notes updated:     {result.notes_updated}")
-        print(f"  Duplicates:        {result.notes_duplicate}")
+        if result.notes_updated:
+            print(f"  Notes updated:     {result.notes_updated}")
+        if result.notes_duplicate:
+            print(f"  Duplicates:        {result.notes_duplicate}")
 
-    print(f"  Sync action:       {result.sync_action}")
-    if result.media_synced:
-        print(f"  Media synced:      yes")
+    if result.sync_action:
+        print(f"  Sync:              {result.sync_action}")
     if result.server_message:
         print(f"  Server message:    {result.server_message}")
 
@@ -155,7 +157,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    # Validate .apkg files exist before doing anything
+    if not args.files and not args.full_upload and not args.full_download:
+        parser.print_help()
+        return 0
+
     for f in args.files:
         if not os.path.isfile(f):
             print(f"Error: File not found: {f}", file=sys.stderr)
@@ -163,7 +168,6 @@ def main(argv: list[str] | None = None) -> int:
         if not f.endswith(".apkg"):
             print(f"Warning: {f} does not have .apkg extension", file=sys.stderr)
 
-    # Credentials are not needed for dry-run
     if args.dry_run:
         username = args.username or os.environ.get("ANKIWEB_USERNAME") or ""
         password = args.password or os.environ.get("ANKIWEB_PASSWORD") or ""
@@ -179,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
             endpoint=args.endpoint,
             dry_run=args.dry_run,
             force_full_upload=args.full_upload,
-            sync_media=not args.no_media,
+            force_full_download=args.full_download,
             allow_updates=args.allow_updates,
         )
         _print_summary(result)
