@@ -28,7 +28,7 @@ _KNOWN_PROPERTIES: dict[str, tuple[str, PropertyValueType]] = {
     "LABEL": ("label", PropertyValueType.SPECIAL),
     "DESCRIPTION": ("description", PropertyValueType.SPECIAL),
     "CAPITAL": ("P36", PropertyValueType.ENTITY),
-    "FLAG_IMAGE": ("P41", PropertyValueType.ENTITY),
+    "FLAG_IMAGE": ("P41", PropertyValueType.LITERAL),
     "POPULATION": ("P1082", PropertyValueType.LITERAL),
     "INCEPTION": ("P571", PropertyValueType.LITERAL),
     "HEAD_OF_STATE": ("P6", PropertyValueType.ENTITY),

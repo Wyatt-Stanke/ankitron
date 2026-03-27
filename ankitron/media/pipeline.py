@@ -167,7 +167,8 @@ def download_media(url: str, dest: Path, timeout: int = 30) -> Path:
     import requests
 
     dest.parent.mkdir(parents=True, exist_ok=True)
-    resp = requests.get(url, timeout=timeout, stream=True)
+    headers = {"User-Agent": "ankitron/0.1.0 (https://github.com/Wyatt-Stanke/ankitron)"}
+    resp = requests.get(url, timeout=timeout, stream=True, headers=headers)
     resp.raise_for_status()
 
     with open(dest, "wb") as f:

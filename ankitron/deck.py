@@ -22,6 +22,7 @@ from ankitron.deck_fetch_pipeline import (
     _check_field_rules,
     _fetch_all_sources,
     _init_provenance,
+    _process_media_fields,
     _run_validators,
     _toposort_sources,
 )
@@ -562,6 +563,7 @@ class Deck:
         _apply_cascade(cls, all_rows, all_provenance, prov_enabled)
         _apply_derivations(cls, all_rows, all_provenance, prov_enabled)
         _apply_source_formatting(cls, all_rows, all_provenance, prov_enabled)
+        _process_media_fields(cls, all_rows, cls._pk_field_attr)
         if prov_enabled:
             _apply_provenance_backfill(cls, all_rows, all_provenance)
         _run_validators(cls, all_rows, skip_validation)

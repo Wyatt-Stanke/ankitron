@@ -1,4 +1,5 @@
 from ankitron import Card, Deck, PKStrategy
+from ankitron.enums import MediaFormat, MediaType
 from ankitron.provenance import ProvenanceConfig
 from ankitron.sources import WikidataSource
 from ankitron.sources.wikidata import P, Q, WikidataQuery
@@ -25,7 +26,7 @@ class USStates(Deck):
         fmt="~{:,.0f}",
     )
 
-    flag = wikidata.Field(P.FLAG_IMAGE)
+    flag = wikidata.Field(P.FLAG_IMAGE, media=MediaType.IMAGE, format=MediaFormat.PNG, width=300)
 
     class capitals(Card):
         front = "What is the capital of {{state}}?"
@@ -38,3 +39,7 @@ class USStates(Deck):
     class populations(Card):
         front = "Approximately how many people live in {{state}}?"
         back = "{{FrontSide}}<br><hr>{{approximate_population}}"
+
+    class flag_card(Card):
+        front = "{{state}}"
+        back = "{{flag}}"

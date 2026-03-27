@@ -1,11 +1,122 @@
 from __future__ import annotations
 
 import contextlib
+import tempfile
+from pathlib import Path
 from typing import Any
 
-from ankitron.enums import FieldRule, Severity
+from ankitron.enums import FieldRule, MediaType, MediaFormat, Severity
 from ankitron.logging import log_info, log_success, log_warn
 from ankitron.transform import Transform, apply_transform_chain
+
+
+def _process_media_fields(
+    cls: type,
+    all_rows: list[dict[str, Any]],
+    pk_field_attr: str,
+) -> None:
+    """Process media fields: download URLs, convert to target format, cache, and generate tags."""
+    from pathlib import Path
+
+    from ankitron.media.pipeline import (
+        download_media,
+        convert_image,
+        generate_media_filename,
+        make_img_tag,
+    )
+
+    # Identify media fields
+    media_fields = [(name, fld) for name, fld in cls._all_fields if fld.media is not None]
+
+    if not media_fields:
+        return
+
+    # Get cache directory
+    cache_dir = Path.home() / ".cache" / "ankitron" / "media"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    for attr_name, fld in media_fields:
+        if fld.media != MediaType.IMAGE:
+            # Skip audio and other non-image media for now
+            continue
+
+        media_dir = cache_dir
+        for row_idx, row in enumerate(all_rows):
+            url = row.get(attr_name, "")
+
+            if not url or not isinstance(url, str):
+                continue
+
+            # Skip if not a URL
+            if not url.startswith("http"):
+                continue
+
+            # Get PK for filename generation
+            pk_val = row.get(f"_pk_{pk_field_attr}", row.get(pk_field_attr, ""))
+
+            try:
+                # Generate stable filename
+                ext = fld.format.value if fld.format else "png"
+                filename = generate_media_filename(cls.__name__, pk_val, attr_name, ext)
+                output_path = media_dir / filename
+
+                # Skip if already cached
+                if output_path.exists():
+                    # Generate img tag with the cached filename
+                    img_tag = make_img_tag(filename, width=fld.width, height=fld.height)
+                    row[attr_name] = img_tag
+                    continue
+
+                # Download to temporary location with proper suffix for format detection
+                import requests
+
+                resp = requests.head(
+                    url, timeout=10, allow_redirects=True, headers={"User-Agent": "ankitron/0.1.0"}
+                )
+                content_type = resp.headers.get("content-type", "").lower()
+
+                # Determine source format from content type
+                if "svg" in content_type:
+                    tmp_suffix = ".svg"
+                elif "jpeg" in content_type or "jpg" in content_type:
+                    tmp_suffix = ".jpg"
+                elif "png" in content_type:
+                    tmp_suffix = ".png"
+                elif "webp" in content_type:
+                    tmp_suffix = ".webp"
+                else:
+                    # Default based on URL
+                    tmp_suffix = ".svg" if ".svg" in url.lower() else ".png"
+
+                with tempfile.NamedTemporaryFile(suffix=tmp_suffix, delete=False) as tmp:
+                    tmp_path = Path(tmp.name)
+
+                try:
+                    log_info(f"  Downloading {attr_name} for {pk_val}...")
+                    download_media(url, tmp_path, timeout=30)
+
+                    # Convert image to target format/size
+                    target_format = fld.format if fld.format else MediaFormat.PNG
+                    convert_image(
+                        input_path=tmp_path,
+                        output_path=output_path,
+                        target_format=target_format,
+                        width=fld.width,
+                        height=fld.height,
+                    )
+
+                    # Generate img tag
+                    img_tag = make_img_tag(filename, width=fld.width, height=fld.height)
+                    row[attr_name] = img_tag
+
+                finally:
+                    # Clean up temp file
+                    if tmp_path.exists():
+                        tmp_path.unlink()
+
+            except Exception as exc:
+                log_warn(f"  Failed to process {attr_name} for {pk_val}: {exc}")
+                # Leave field value as-is (URL) if processing fails
 
 
 def _coerce_numeric(value: Any) -> Any:
