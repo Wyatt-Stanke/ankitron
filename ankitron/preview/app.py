@@ -2,11 +2,29 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from ankitron.deck import _FIELD_REF_PATTERN
+
+
+_IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]+)(")', flags=re.IGNORECASE)
+
+
+def _rewrite_local_img_srcs(html: str) -> str:
+    """Rewrite local media filenames in <img src> to preview media routes."""
+
+    def repl(match: re.Match[str]) -> str:
+        prefix, src, suffix = match.groups()
+        lowered = src.strip().lower()
+        if lowered.startswith(("http://", "https://", "data:", "blob:", "/")):
+            return match.group(0)
+        return f"{prefix}/media/{src}{suffix}"
+
+    return _IMG_SRC_RE.sub(repl, html)
 
 
 def _render_card(card_cls: Any, row: dict[str, str]) -> dict[str, str]:
@@ -18,8 +36,10 @@ def _render_card(card_cls: Any, row: dict[str, str]) -> dict[str, str]:
 
         return _FIELD_REF_PATTERN.sub(repl, template)
 
-    rendered_front = substitute(card_cls.front)
-    rendered_back = substitute(card_cls.back).replace("{{FrontSide}}", rendered_front)
+    rendered_front = _rewrite_local_img_srcs(substitute(card_cls.front))
+    rendered_back = _rewrite_local_img_srcs(
+        substitute(card_cls.back).replace("{{FrontSide}}", rendered_front)
+    )
 
     return {
         "name": card_cls.__name__,
@@ -57,6 +77,17 @@ def _serialize_provenance_row(prov_row: dict[str, Any] | None) -> dict[str, Any]
     return {field_name: _json_safe(record) for field_name, record in prov_row.items()}
 
 
+def _rewrite_row_media_values(row: dict[str, Any]) -> dict[str, Any]:
+    """Rewrite local media refs in string fields for browser preview compatibility."""
+    out: dict[str, Any] = {}
+    for key, value in row.items():
+        if isinstance(value, str):
+            out[key] = _rewrite_local_img_srcs(value)
+        else:
+            out[key] = value
+    return out
+
+
 def create_preview_app(
     frontend_html: str,
     state: dict[str, Any],
@@ -71,8 +102,13 @@ def create_preview_app(
     """
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
     from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi.staticfiles import StaticFiles
 
     app = FastAPI(title="ankitron preview")
+
+    media_dir = Path.home() / ".cache" / "ankitron" / "media"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/media", StaticFiles(directory=str(media_dir)), name="media")
 
     def runtime() -> dict[str, Any]:
         return state["runtime"]
@@ -113,7 +149,7 @@ def create_preview_app(
         for row in (instance._data or [])[offset : offset + limit]:
             out = {key: row.get(key, "") for key in visible}
             out["__pk"] = row.get(f"_pk_{pk_attr}", row.get(pk_attr, ""))
-            rows.append(out)
+            rows.append(_rewrite_row_media_values(out))
         return JSONResponse({"rows": rows, "total": len(instance._data or [])})
 
     @app.get("/api/row/{pk}")
@@ -127,7 +163,7 @@ def create_preview_app(
                 visible = [name for name, field in cls._all_fields if not field.internal]
                 out = {key: row.get(key, "") for key in visible}
                 out["__pk"] = row.get(f"_pk_{pk_attr}", row.get(pk_attr, ""))
-                return JSONResponse(out)
+                return JSONResponse(_rewrite_row_media_values(out))
         return JSONResponse({"error": "not found"}, status_code=404)
 
     @app.get("/api/provenance/{pk}")
