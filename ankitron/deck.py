@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import re
 from dataclasses import dataclass
 from dataclasses import field as dc_field
@@ -13,6 +12,19 @@ from rich import box
 from rich.table import Table
 
 from ankitron.cache import Cache
+from ankitron.deck_fetch_pipeline import (
+    _apply_cascade,
+    _apply_defaults,
+    _apply_derivations,
+    _apply_overrides,
+    _apply_provenance_backfill,
+    _apply_source_formatting,
+    _check_field_rules,
+    _fetch_all_sources,
+    _init_provenance,
+    _run_validators,
+    _toposort_sources,
+)
 from ankitron.enums import (
     AnkiTemplate,
     FieldKind,
@@ -20,7 +32,6 @@ from ankitron.enums import (
     MediaFormat,
     MediaType,
     PKStrategy,
-    Severity,
 )
 from ankitron.logging import (
     console,
@@ -31,64 +42,11 @@ from ankitron.logging import (
     warning_count,
 )
 from ankitron.sources.wikidata.properties import PropertyValueType
-from ankitron.transform import Transform, apply_transform_chain
+from ankitron.transform import Transform
 
 _FIELD_REF_PATTERN = re.compile(
     r"\{\{(?!FrontSide|Tags|Type|Deck|Subdeck|CardFlag|Card|#|/|\^|type:|hint:|text:|cloze:|type:cloze:|type:nc:|c\d+::)(\w+)\}\}"
 )
-
-
-def _coerce_numeric(value: Any) -> Any:
-    """Try to convert a string value to int or float, returning original if not possible."""
-    if isinstance(value, str) and value:
-        try:
-            n = float(value)
-            return int(n) if n == int(n) else n
-        except (ValueError, TypeError):
-            pass
-    return value
-
-
-def _build_transform_steps_for_prov(
-    transform: Any,
-    input_val: Any,
-    output_val: Any,
-) -> list:
-    """Decompose a Transform (possibly chained) into TransformStep list for provenance."""
-    from ankitron.provenance import TransformStep
-    from ankitron.transform import ChainedTransform, DatasetAwareTransform
-
-    if isinstance(transform, ChainedTransform):
-        steps_out: list = []
-        cur = input_val
-        for step in transform.steps:
-            if isinstance(step, DatasetAwareTransform):
-                out = None
-            else:
-                try:
-                    out = step.apply(cur)
-                except Exception:
-                    out = None
-            steps_out.append(
-                TransformStep(
-                    name=step.name,
-                    description=step.description,
-                    input_value=cur,
-                    output_value=out,
-                )
-            )
-            if out is not None:
-                cur = out
-        return steps_out
-    return [
-        TransformStep(
-            name=transform.name,
-            description=transform.description,
-            input_value=input_val,
-            output_value=output_val,
-        )
-    ]
-
 
 @dataclass
 class Field:
@@ -502,84 +460,6 @@ def _store_deck_metadata(
             cls._fields_by_source[src_id] = []
         cls._fields_by_source[src_id].append((attr_name, fld))
 
-
-def _toposort_sources(
-    sources: list[tuple[str, Any]],
-) -> list[tuple[str, Any]]:
-    """Sort sources by dependency (linked_to) order.
-
-    Sources without dependencies come first. Sources that depend on others
-    come after their dependencies.
-    """
-    if len(sources) <= 1:
-        return sources
-
-    id_to_entry = {id(src): (name, src) for name, src in sources}
-    in_degree: dict[int, int] = {id(src): 0 for _, src in sources}
-    dependents: dict[int, list[int]] = {id(src): [] for _, src in sources}
-
-    for _, src in sources:
-        linked = getattr(src, "_linked_to", None)
-        if linked is not None and id(linked) in id_to_entry:
-            in_degree[id(src)] += 1
-            dependents[id(linked)].append(id(src))
-
-    # Kahn's algorithm
-    queue = [sid for sid, deg in in_degree.items() if deg == 0]
-    result: list[tuple[str, Any]] = []
-
-    while queue:
-        sid = queue.pop(0)
-        result.append(id_to_entry[sid])
-        for dep_id in dependents[sid]:
-            in_degree[dep_id] -= 1
-            if in_degree[dep_id] == 0:
-                queue.append(dep_id)
-
-    if len(result) != len(sources):
-        raise TypeError("Circular source dependency detected")
-
-    return result
-
-
-def _merge_linked_rows(
-    all_rows: list[dict[str, Any]],
-    new_rows: list[dict[str, Any]],
-    bound_fields: list[tuple[str, Any]],
-    _source: Any,
-    pk_field_attr: str,
-) -> None:
-    """Merge data from a linked source into existing rows.
-
-    For each bound field, copies the value from new_rows into all_rows
-    by matching on position (if same length) or PK.
-    """
-    field_attrs = [attr for attr, _ in bound_fields]
-
-    if len(new_rows) == len(all_rows):
-        # Same-length — positional merge
-        for i, row in enumerate(all_rows):
-            for attr in field_attrs:
-                if attr in new_rows[i]:
-                    row[attr] = new_rows[i][attr]
-    else:
-        # Build index on new rows by PK
-        pk_key = f"_pk_{pk_field_attr}"
-        new_by_pk: dict[str, dict] = {}
-        for nr in new_rows:
-            pk = nr.get(pk_key, nr.get(pk_field_attr, ""))
-            if pk:
-                new_by_pk[pk] = nr
-
-        for row in all_rows:
-            pk = row.get(pk_key, row.get(pk_field_attr, ""))
-            matched = new_by_pk.get(pk)
-            if matched:
-                for attr in field_attrs:
-                    if attr in matched:
-                        row[attr] = matched[attr]
-
-
 class Deck:
     """
     Base class for deck definitions. Subclass to define a deck.
@@ -623,22 +503,21 @@ class Deck:
 
         Execution order:
         1. Source fetching
-        2. FieldRule checks (REQUIRED → error, EXPECTED → warn)
-        3. Default values applied
-        4. Overrides applied
-        5. Cascade resolution
-        6. Computed and derived fields (with Transform support)
-        7. Formatting
-        8. Validators
+        2. Provenance initialisation
+        3. FieldRule checks (REQUIRED → error, EXPECTED → warn)
+        4. Default values applied
+        5. Overrides applied
+        6. Cascade resolution
+        7. Computed and derived fields (with Transform support)
+        8. Source field formatting
+        9. Validators
         """
         cls = self.__class__
         section_header(f"Fetch: {cls.__name__}")
 
-        # (source_fields used for logging only)
         internal_count = sum(1 for _, f in cls._all_fields if f.is_internal)
         derived_count = len(cls._derived_order)
         pk_fld = next(f for n, f in cls._all_fields if n == cls._pk_field_attr)
-
         total_fields = len(cls._all_fields)
         card_count = len(cls._deck_cards)
         card_label = "card types" if card_count != 1 else "card type"
@@ -651,10 +530,8 @@ class Deck:
         if derived_count:
             log_info(f"  {derived_count} derived field{'s' if derived_count != 1 else ''}")
 
-        all_rows: list[dict[str, Any]] = []
-
-        # Provenance tracking
-        from ankitron.provenance import ProvenanceConfig, ProvenancePosition, ProvenanceRecord
+        # Resolve provenance config once
+        from ankitron.provenance import ProvenanceConfig, ProvenancePosition
 
         prov_config: ProvenanceConfig | None = getattr(cls, "provenance", None)
         prov_enabled = (
@@ -662,10 +539,8 @@ class Deck:
             and prov_config.enabled
             and prov_config.position != ProvenancePosition.NONE
         )
-        all_provenance: list[dict[str, ProvenanceRecord]] = []
 
-        # ── 1. Source fetching ──
-        # Collect all source instances with their attribute names
+        # Collect and topologically sort sources
         source_entries = [
             (name, src)
             for name, src in cls.__dict__.items()
@@ -674,420 +549,33 @@ class Deck:
             and hasattr(src, "Field")
             and not isinstance(src, type)
         ]
-
-        # Topological sort based on linked_to dependencies
         sorted_sources = _toposort_sources(source_entries)
 
-        for source_attr, source in sorted_sources:
-            src_id = id(source)
-            bound_fields = cls._fields_by_source.get(src_id, [])
-            if not bound_fields:
-                continue
+        # Steps 1-9
+        all_rows = _fetch_all_sources(
+            cls, self._cache, sorted_sources, cls._pk_field_attr, refresh
+        )
 
-            log_info(f"Source '{source_attr}': fetching {len(bound_fields)} fields")
-
-            # For linked sources, pass existing rows so they can join
-            if hasattr(source, "_linked_to") and source._linked_to is not None and all_rows:
-                rows = source.fetch(bound_fields, self._cache, refresh)
-                # Merge linked source data into existing rows
-                _merge_linked_rows(all_rows, rows, bound_fields, source, cls._pk_field_attr)
-            else:
-                rows = source.fetch(bound_fields, self._cache, refresh)
-                if not all_rows:
-                    all_rows = rows
-                else:
-                    # Merge additional source data into existing rows
-                    _merge_linked_rows(all_rows, rows, bound_fields, source, cls._pk_field_attr)
-
-        # Initialise provenance records after source fetching
+        all_provenance: list[dict[str, Any]] = []
         if prov_enabled:
-            from datetime import UTC
-            from datetime import datetime as _dt
+            all_provenance = _init_provenance(cls, all_rows, sorted_sources)
 
-            from ankitron.sources.wikidata.wikidata import (
-                WikidataSource as _WikidataSource,
-            )
-            source_attr_by_id = {id(src): name for name, src in source_entries}
-            for _row_idx, row in enumerate(all_rows):
-                prov_row: dict[str, ProvenanceRecord] = {}
-                item_uri = row.get("_item_uri", "")
-                qid = item_uri.rsplit("/", 1)[-1] if item_uri else None
-                for attr_name, fld in cls._all_fields:
-                    # Derived, computed, and cascade fields are populated later in the pipeline
-                    if fld.is_derived or fld.is_computed or fld.is_cascade:
-                        continue
-                    src = fld._source
-                    cache_info = getattr(src, "_last_cache_info", None) if src else None
-                    is_wikidata = isinstance(src, _WikidataSource)
-                    raw_val = row.get(attr_name)
-                    entity_url = (
-                        f"https://www.wikidata.org/wiki/{qid}"
-                        if is_wikidata and qid
-                        else None
-                    )
-                    prov_row[attr_name] = ProvenanceRecord(
-                        source_type=type(src).__name__ if src else "unknown",
-                        source_name=source_attr_by_id.get(id(src), "") if src else "",
-                        source_key=fld._source_key,
-                        source_url=entity_url,
-                        source_entity_id=(qid if is_wikidata else None),
-                        raw_value=raw_val,
-                        raw_type=type(raw_val).__name__,
-                        fetched_at=_dt.now(UTC),
-                        cached=(cache_info.get("cached", False) if cache_info else False),
-                    )
-                all_provenance.append(prov_row)
-
-        # ── 2. FieldRule checks ──
-        # FieldRule checks
-        for attr_name, fld in cls._all_fields:
-            if fld.is_derived or fld.is_computed:
-                continue  # Checked after derivation
-            if fld.rule == FieldRule.OPTIONAL:
-                continue
-            missing_pks = []
-            for row in all_rows:
-                val = row.get(attr_name)
-                if val is None or (isinstance(val, str) and val.strip() == ""):
-                    pk_val = row.get(f"_pk_{cls._pk_field_attr}", row.get(cls._pk_field_attr, "?"))
-                    missing_pks.append(str(pk_val))
-            if missing_pks:
-                msg = (
-                    f"Field '{attr_name}' ({fld.rule.value}): "
-                    f"{len(missing_pks)} row(s) missing values"
-                )
-                if fld.rule == FieldRule.REQUIRED:
-                    raise RuntimeError(f"{cls.__name__}: {msg}. Aborting.")
-                if fld.rule == FieldRule.EXPECTED:
-                    log_warn(f"{cls.__name__}: {msg}")
-
-        # ── 3. Default values applied ──
-        for attr_name, fld in cls._all_fields:
-            if fld.default is None:
-                continue
-            if fld.is_derived or fld.is_computed:
-                continue
-            for row in all_rows:
-                val = row.get(attr_name)
-                if val is None or (isinstance(val, str) and val.strip() == ""):
-                    row[attr_name] = (
-                        str(fld.default) if not isinstance(fld.default, str) else fld.default
-                    )
-
-        # ── 4. Overrides applied ──
-        if cls._deck_overrides:
-            pk_attr = cls._pk_field_attr
-            overrides_applied = 0
-            for row_idx, row in enumerate(all_rows):
-                pk_val = row.get(f"_pk_{pk_attr}", row.get(pk_attr, ""))
-                if pk_val in cls._deck_overrides:
-                    for override_field, override_val in cls._deck_overrides[pk_val].items():
-                        # Track provenance for override
-                        if prov_enabled and row_idx < len(all_provenance):
-                            prov_rec = all_provenance[row_idx].get(override_field)
-                            if prov_rec:
-                                prov_rec.overridden = True
-                                prov_rec.original_value = row.get(override_field)
-                        row[override_field] = (
-                            str(override_val) if not isinstance(override_val, str) else override_val
-                        )
-                        overrides_applied += 1
-            if overrides_applied:
-                log_info(f"  {overrides_applied} override(s) applied")
-
-        # ── 5. Cascade resolution ──
-        cascade_fields = [(n, f) for n, f in cls._all_fields if f.is_cascade]
-        if cascade_fields:
-            field_id_to_attr = {id(fld): name for name, fld in cls._all_fields}
-            for attr_name, fld in cascade_fields:
-                source_attrs = [field_id_to_attr[id(src)] for src in fld._cascade_sources]
-                for row_idx, row in enumerate(all_rows):
-                    chosen_attr: str | None = None
-                    for src_attr in source_attrs:
-                        val = row.get(src_attr)
-                        if val is not None and (not isinstance(val, str) or val.strip()):
-                            row[attr_name] = val
-                            chosen_attr = src_attr
-                            break
-                    else:
-                        row[attr_name] = ""
-                    if prov_enabled and row_idx < len(all_provenance):
-                        prov_row = all_provenance[row_idx]
-                        prov_row[attr_name] = ProvenanceRecord(
-                            source_type="cascade",
-                            source_name="",
-                            raw_value=row[attr_name],
-                            raw_type=type(row[attr_name]).__name__,
-                            derived_from=chosen_attr,
-                        )
-
-        # ── 6. Derivation chain (derived + computed fields) ──
-        if cls._derived_order:
-            field_id_to_attr = {id(fld): name for name, fld in cls._all_fields}
-            transforms_applied = []
-
-            for attr_name, fld in cls._derived_order:
-                if fld.is_computed:
-                    # Computed field: apply function to multiple inputs
-                    input_attrs = [field_id_to_attr[id(inp)] for inp in fld._computed_inputs]
-                    transforms_applied.append(f"{attr_name} ← computed({', '.join(input_attrs)})")
-
-                    for row_idx, row in enumerate(all_rows):
-                        input_vals = []
-                        for inp_attr in input_attrs:
-                            v = row.get(inp_attr, "")
-                            input_vals.append(_coerce_numeric(v))
-
-                        try:
-                            val = fld._computed_fn(*input_vals)
-                        except Exception as exc:
-                            pk_val = row.get(
-                                f"_pk_{cls._pk_field_attr}",
-                                row.get(cls._pk_field_attr, "?"),
-                            )
-                            raise RuntimeError(
-                                f"{cls.__name__}: computed field '{attr_name}' failed "
-                                f"on row '{pk_val}': {type(exc).__name__}: {exc}."
-                            ) from exc
-
-                        row[attr_name] = str(val) if val is not None else ""
-
-                        if prov_enabled and row_idx < len(all_provenance):
-                            from ankitron.provenance import TransformStep
-                            fn_name = getattr(fld._computed_fn, "__name__", "computed_fn")
-                            raw_inputs = {
-                                ia: _coerce_numeric(row.get(ia, "")) for ia in input_attrs
-                            }
-                            prov_row = all_provenance[row_idx]
-                            prov_row[attr_name] = ProvenanceRecord(
-                                source_type="computed",
-                                source_name="",
-                                raw_value=raw_inputs,
-                                raw_type="dict",
-                                transformed=True,
-                                transform_chain=[
-                                    TransformStep(
-                                        name=fn_name,
-                                        description=f"computed({', '.join(input_attrs)})",
-                                        input_value=raw_inputs,
-                                        output_value=val,
-                                    )
-                                ],
-                                computed_from=input_attrs,
-                                formatted_value=row[attr_name],
-                            )
-
-                elif fld.is_derived:
-                    parent_attr = field_id_to_attr[id(fld._parent)]
-                    transforms_applied.append(f"{attr_name} ← {parent_attr}")
-
-                    if isinstance(fld._transform, Transform):
-                        # Use the Transform API
-                        if fld._transform.is_dataset_aware:
-                            # Dataset-aware: batch apply then record per-row provenance
-                            parent_vals = [row.get(parent_attr, "") for row in all_rows]
-                            converted = [
-                                _coerce_numeric(v) if v != "" else None for v in parent_vals
-                            ]
-                            results = apply_transform_chain(fld._transform, converted)
-                            for row_idx, (row, conv_val, result_val) in enumerate(
-                                zip(all_rows, converted, results, strict=False)
-                            ):
-                                row[attr_name] = str(result_val) if result_val is not None else ""
-                                if prov_enabled and row_idx < len(all_provenance):
-                                    steps = _build_transform_steps_for_prov(
-                                        fld._transform, conv_val, result_val
-                                    )
-                                    prov_row = all_provenance[row_idx]
-                                    prov_row[attr_name] = ProvenanceRecord(
-                                        source_type="derived",
-                                        source_name="",
-                                        derived_from=parent_attr,
-                                        raw_value=conv_val,
-                                        raw_type=type(conv_val).__name__,
-                                        transformed=True,
-                                        transform_chain=steps,
-                                        formatted_value=row[attr_name],
-                                    )
-                        else:
-                            # Per-row apply
-                            for row_idx, row in enumerate(all_rows):
-                                parent_val = row.get(parent_attr, "")
-                                coerced_in = _coerce_numeric(parent_val)
-                                result_val = coerced_in
-                                try:
-                                    result_val = fld._transform.apply(coerced_in)
-                                except Exception as exc:
-                                    pk_val = row.get(
-                                        f"_pk_{cls._pk_field_attr}",
-                                        row.get(cls._pk_field_attr, "?"),
-                                    )
-                                    raise RuntimeError(
-                                        f"{cls.__name__}: transform failed for field '{attr_name}' "
-                                        f"on row '{pk_val}': {type(exc).__name__}: {exc}. "
-                                        f"The source value was {parent_val!r}."
-                                    ) from exc
-                                row[attr_name] = str(result_val) if result_val is not None else ""
-                                if prov_enabled and row_idx < len(all_provenance):
-                                    steps = _build_transform_steps_for_prov(
-                                        fld._transform, coerced_in, result_val
-                                    )
-                                    prov_row = all_provenance[row_idx]
-                                    prov_row[attr_name] = ProvenanceRecord(
-                                        source_type="derived",
-                                        source_name="",
-                                        derived_from=parent_attr,
-                                        raw_value=coerced_in,
-                                        raw_type=type(coerced_in).__name__,
-                                        transformed=True,
-                                        transform_chain=steps,
-                                        formatted_value=row[attr_name],
-                                    )
-                    else:
-                        # Legacy callable transform (or bare copy with no transform)
-                        for row_idx, row in enumerate(all_rows):
-                            parent_val = row.get(parent_attr, "")
-                            coerced_in = _coerce_numeric(parent_val)
-                            result_val = coerced_in
-
-                            if fld._transform is not None:
-                                try:
-                                    result_val = fld._transform(coerced_in)
-                                except Exception as exc:
-                                    pk_val = row.get(
-                                        f"_pk_{cls._pk_field_attr}",
-                                        row.get(cls._pk_field_attr, "?"),
-                                    )
-                                    raise RuntimeError(
-                                        f"{cls.__name__}: transform failed for field '{attr_name}' "
-                                        f"on row '{pk_val}': {type(exc).__name__}: {exc}. "
-                                        f"The source value was {parent_val!r}."
-                                    ) from exc
-
-                            row[attr_name] = str(result_val) if result_val is not None else ""
-
-                            if prov_enabled and row_idx < len(all_provenance):
-                                from ankitron.provenance import TransformStep
-                                prov_row = all_provenance[row_idx]
-                                fn_name = (
-                                    getattr(fld._transform, "__name__", "custom")
-                                    if fld._transform is not None
-                                    else "copy"
-                                )
-                                chain = (
-                                    [
-                                        TransformStep(
-                                            name=fn_name,
-                                            description=f"{parent_attr} → {attr_name}",
-                                            input_value=coerced_in,
-                                            output_value=result_val,
-                                        )
-                                    ]
-                                    if fld._transform is not None
-                                    else []
-                                )
-                                prov_row[attr_name] = ProvenanceRecord(
-                                    source_type="derived",
-                                    source_name="",
-                                    derived_from=parent_attr,
-                                    raw_value=coerced_in,
-                                    raw_type=type(coerced_in).__name__,
-                                    transformed=fld._transform is not None,
-                                    transform_chain=chain,
-                                    formatted_value=row[attr_name],
-                                )
-
-                # Apply fmt per-row for this derived/computed field and update provenance
-                if fld.fmt:
-                    for row_idx, row in enumerate(all_rows):
-                        val = row.get(attr_name, "")
-                        if val:
-                            numeric = _coerce_numeric(val)
-                            if isinstance(numeric, (int, float)):
-                                with contextlib.suppress(ValueError, TypeError):
-                                    formatted = fld.fmt.format(numeric)
-                                    row[attr_name] = formatted
-                                    if prov_enabled and row_idx < len(all_provenance):
-                                        prov_row = all_provenance[row_idx]
-                                        rec = prov_row.get(attr_name)
-                                        if rec:
-                                            rec.fmt = fld.fmt
-                                            rec.formatted_value = formatted
-
-            log_success(
-                f"{len(transforms_applied)} transform{'s' if len(transforms_applied) != 1 else ''} "
-                f"applied: {', '.join(transforms_applied)}"
-            )
-
-        # ── 6. Format non-derived source fields ──
-        for attr_name, fld in cls._all_fields:
-            if fld.is_derived or fld.is_computed:
-                continue
-            if not fld.fmt:
-                continue
-            for row_idx, row in enumerate(all_rows):
-                val = row.get(attr_name, "")
-                if val:
-                    numeric = _coerce_numeric(val)
-                    if isinstance(numeric, (int, float)):
-                        with contextlib.suppress(ValueError, TypeError):
-                            formatted = fld.fmt.format(numeric)
-                            row[attr_name] = formatted
-                            if prov_enabled and row_idx < len(all_provenance):
-                                prov_rec = all_provenance[row_idx].get(attr_name)
-                                if prov_rec:
-                                    prov_rec.fmt = fld.fmt
-                                    prov_rec.formatted_value = formatted
-
-        # Safety-net: ensure every field has at least a minimal provenance record.
-        # In normal operation all fields are populated inline above; this only fires
-        # for edge cases (e.g. a field type added without provenance wiring).
+        _check_field_rules(cls, all_rows)
+        _apply_defaults(cls, all_rows)
+        _apply_overrides(cls, all_rows, all_provenance, prov_enabled)
+        _apply_cascade(cls, all_rows, all_provenance, prov_enabled)
+        _apply_derivations(cls, all_rows, all_provenance, prov_enabled)
+        _apply_source_formatting(cls, all_rows, all_provenance, prov_enabled)
         if prov_enabled:
-            field_id_to_attr = {id(fld): name for name, fld in cls._all_fields}
-            for row_idx in range(len(all_rows)):
-                if row_idx >= len(all_provenance):
-                    break
-                prov_row = all_provenance[row_idx]
-                for attr_name, fld in cls._all_fields:
-                    if attr_name in prov_row:
-                        continue
-                    rec = ProvenanceRecord(
-                        source_type=(
-                            "derived" if fld.is_derived
-                            else "computed" if fld.is_computed
-                            else "cascade" if fld.is_cascade
-                            else "unknown"
-                        ),
-                        source_name="",
-                        raw_value=all_rows[row_idx].get(attr_name),
-                        raw_type=type(all_rows[row_idx].get(attr_name)).__name__,
-                    )
-                    if fld.is_derived and fld._parent:
-                        rec.derived_from = field_id_to_attr.get(id(fld._parent))
-                    if fld.is_computed and fld._computed_inputs:
-                        rec.computed_from = [
-                            field_id_to_attr.get(id(inp), "?") for inp in fld._computed_inputs
-                        ]
-                    prov_row[attr_name] = rec
-
-        # ── 7. Validators ──
-        if cls._deck_validators and not skip_validation:
-            from ankitron.validation import run_validators
-
-            results = run_validators(cls._deck_validators, all_rows)
-            for result in results:
-                if result.passed:
-                    log_success(f"Validator '{result.name}': passed")
-                else:
-                    msg = f"Validator '{result.name}': FAILED — {'; '.join(result.messages[:3])}"
-                    if result.severity == Severity.ERROR:
-                        raise RuntimeError(f"{cls.__name__}: {msg}")
-                    log_warn(msg)
+            _apply_provenance_backfill(cls, all_rows, all_provenance)
+        _run_validators(cls, all_rows, skip_validation)
 
         self._data = all_rows
         if prov_enabled:
             self._provenance = all_provenance
-            log_info(f"Provenance: {len(all_provenance)} rows x {len(cls._all_fields)} fields")
+            log_info(
+                f"Provenance: {len(all_provenance)} rows x {len(cls._all_fields)} fields"
+            )
         log_success(f"Loaded {len(self._data)} rows")
 
     def preview(self, max_rows: int = 10, mode: str = "table") -> None:

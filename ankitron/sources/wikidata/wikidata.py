@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from typing import TYPE_CHECKING, Any
 
 import requests
@@ -21,6 +22,8 @@ from ankitron.logging import (
 )
 from ankitron.sources.wikidata.properties import PropertyValueType, WikidataProperty
 from ankitron.sources.wikidata.query import QueryType, WikidataQuery
+
+_PROP_RE = re.compile(r"^P\d+$")
 
 WIKIDATA_SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
 
@@ -207,3 +210,66 @@ class WikidataSource:
                 progress.advance(task)
 
         return rows
+
+    def build_provenance_records(
+        self,
+        rows: list[dict],
+        fields: list[tuple[str, Any]],
+        source_name: str,
+    ) -> list[dict[str, Any]]:
+        """Build per-row provenance records for all fields belonging to this source.
+
+        Implements the source provenance protocol so the deck pipeline does not need
+        to know about Wikidata internals.  Any source that wants richer provenance
+        can implement this same method signature.
+        """
+        from datetime import UTC
+        from datetime import datetime as _dt
+
+        from ankitron.provenance import ProvenanceRecord
+
+        cache_info = self._last_cache_info
+        cached = cache_info.get("cached", False) if cache_info else False
+        fetched_at = _dt.now(UTC)
+
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            prov_row: dict[str, Any] = {}
+            item_uri = row.get("_item_uri", "")
+            qid = item_uri.rsplit("/", 1)[-1] if item_uri else None
+
+            for attr_name, fld in fields:
+                # Skip field types populated later in the deck pipeline
+                if fld.is_derived or fld.is_computed or fld.is_cascade:
+                    continue
+                # Only process fields that belong to this source instance
+                if fld._source is not self:
+                    continue
+
+                source_key = fld._source_key
+                raw_val = row.get(attr_name)
+
+                # Build entity URL; add the property fragment when the key is a
+                # Wikidata property ID (e.g. P36 -> #P36)
+                entity_url: str | None = None
+                if qid:
+                    if source_key and _PROP_RE.match(source_key):
+                        entity_url = f"https://www.wikidata.org/wiki/{qid}#{source_key}"
+                    else:
+                        entity_url = f"https://www.wikidata.org/wiki/{qid}"
+
+                prov_row[attr_name] = ProvenanceRecord(
+                    source_type="WikidataSource",
+                    source_name=source_name,
+                    source_key=source_key,
+                    source_url=entity_url,
+                    source_entity_id=qid,
+                    raw_value=raw_val,
+                    raw_type=type(raw_val).__name__,
+                    fetched_at=fetched_at,
+                    cached=cached,
+                )
+
+            result.append(prov_row)
+        return result
+
