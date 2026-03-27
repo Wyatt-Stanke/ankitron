@@ -4,7 +4,6 @@ ankitron — A declarative Python SDK for programmatically generating Anki flash
 
 from ankitron.deck import Card, Deck, Field, Tag
 from ankitron.enums import (
-    AnkiTemplate,
     FieldKind,
     FieldRule,
     MediaFormat,
@@ -18,7 +17,6 @@ from ankitron.transform import Transform
 from ankitron.validation import OnMismatch, Validate, VerifyStrategy
 
 __all__ = [
-    "AnkiTemplate",
     "Card",
     "ChartConfig",
     "Deck",

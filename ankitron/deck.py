@@ -26,7 +26,6 @@ from ankitron.deck_fetch_pipeline import (
     _toposort_sources,
 )
 from ankitron.enums import (
-    AnkiTemplate,
     FieldKind,
     FieldRule,
     MediaFormat,
@@ -467,8 +466,6 @@ class Deck:
     Uses __init_subclass__ to introspect the class body at definition time.
     """
 
-    template: AnkiTemplate = AnkiTemplate.BASIC
-
     # These are set by __init_subclass__ on subclasses
     _deck_fields: list[Field]
     _deck_cards: list[type[Card]]
@@ -480,7 +477,6 @@ class Deck:
     _derived_order: list[tuple[str, Field]]
     _all_fields: list[tuple[str, Field]]
     _deck_tags: list[str | Tag]
-    _deck_validators: list[Any]
     _deck_overrides: dict[str, dict[str, Any]]
 
     def __init_subclass__(cls, **kwargs: Any) -> None:

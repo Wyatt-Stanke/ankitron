@@ -1,4 +1,4 @@
-from ankitron import AnkiTemplate, Card, Deck, PKStrategy
+from ankitron import Card, Deck, PKStrategy
 from ankitron.provenance import ProvenanceConfig
 from ankitron.sources import WikidataSource
 from ankitron.sources.wikidata import P, Q, WikidataQuery
@@ -9,7 +9,6 @@ class USStates(Deck):
     deck_name = "Geography::US States"
     provenance = ProvenanceConfig(enabled=True)
 
-    template = AnkiTemplate.BASIC
     wikidata = WikidataSource(query=WikidataQuery.instances_of(Q.US_STATE))
 
     state = wikidata.Field(P.LABEL, pk=PKStrategy.SOURCE_ID)
