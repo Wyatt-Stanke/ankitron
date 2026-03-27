@@ -1,9 +1,4 @@
-"""
-File watcher — monitors deck files for changes and triggers reload.
-
-Uses watchdog to watch for file modifications and sends
-reload signals via WebSocket.
-"""
+"""File watcher — monitors deck files for changes and triggers reload."""
 
 from __future__ import annotations
 
@@ -15,13 +10,13 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-def start_watcher(filepath: str, port: int) -> Callable[[], None]:
+def start_watcher(filepath: str, host: str, port: int) -> Callable[[], None]:
     """Start a file watcher that sends reload signals on changes.
 
     Returns a stop function to shut down the watcher.
     """
     try:
-        from watchdog.events import FileModifiedEvent, FileSystemEventHandler
+        from watchdog.events import FileSystemEvent, FileSystemEventHandler
         from watchdog.observers import Observer
     except ImportError as err:
         raise ImportError(
@@ -35,17 +30,30 @@ def start_watcher(filepath: str, port: int) -> Callable[[], None]:
         def __init__(self) -> None:
             self._last_reload = 0.0
 
-        def on_modified(self, event: FileModifiedEvent) -> None:  # type: ignore[override]
+        def _maybe_reload(self, event: FileSystemEvent) -> None:
             if event.is_directory:
                 return
-            if not str(event.src_path).endswith(".py"):
+
+            changed_paths = [getattr(event, "src_path", ""), getattr(event, "dest_path", "")]
+            if not any(str(p).lower().endswith(".py") for p in changed_paths if p):
                 return
-            # Debounce — at most once per second
+
+            # Debounce — at most once per second.
             now = time.time()
             if now - self._last_reload < 1.0:
                 return
+
             self._last_reload = now
-            _send_reload(port)
+            _send_reload(host=host, port=port)
+
+        def on_modified(self, event: FileSystemEvent) -> None:  # type: ignore[override]
+            self._maybe_reload(event)
+
+        def on_created(self, event: FileSystemEvent) -> None:  # type: ignore[override]
+            self._maybe_reload(event)
+
+        def on_moved(self, event: FileSystemEvent) -> None:  # type: ignore[override]
+            self._maybe_reload(event)
 
     handler = _Handler()
     observer = Observer()
@@ -60,12 +68,11 @@ def start_watcher(filepath: str, port: int) -> Callable[[], None]:
     return stop
 
 
-def _send_reload(port: int) -> None:
-    """Send a reload signal to the preview server via WebSocket."""
+def _send_reload(host: str, port: int) -> None:
+    """Send a reload signal to the preview server via HTTP."""
     try:
-        import websockets.sync.client as ws_client
+        import requests
 
-        with ws_client.connect(f"ws://127.0.0.1:{port}/ws") as ws:
-            ws.send("reload")
+        requests.post(f"http://{host}:{port}/api/reload", timeout=1)
     except Exception:  # noqa: S110
         pass  # Server might not be ready yet

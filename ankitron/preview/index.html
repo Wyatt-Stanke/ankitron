@@ -1,0 +1,414 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ankitron preview</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: #f5f5f5;
+        color: #333;
+      }
+      .header {
+        background: #1a1a2e;
+        color: white;
+        padding: 12px 20px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .header h1 {
+        font-size: 18px;
+        font-weight: 600;
+      }
+      .header .badge {
+        background: #4a90d9;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+      }
+      .tabs {
+        display: flex;
+        background: #fff;
+        border-bottom: 1px solid #ddd;
+        padding: 0 20px;
+      }
+      .tab {
+        padding: 10px 16px;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        font-size: 14px;
+        color: #666;
+      }
+      .tab.active {
+        color: #4a90d9;
+        border-color: #4a90d9;
+      }
+      .content {
+        padding: 20px;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      .card-preview {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        padding: 24px;
+        margin: 12px 0;
+        min-height: 150px;
+        cursor: pointer;
+      }
+      .card-controls {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 16px;
+        color: #666;
+        font-size: 13px;
+      }
+      .card-button {
+        border: 1px solid #d6d6d6;
+        background: white;
+        color: #333;
+        border-radius: 999px;
+        padding: 8px 14px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .card-button:hover {
+        background: #f7f7f7;
+      }
+      .card-button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .card-preview .label {
+        font-size: 11px;
+        color: #999;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+      }
+      .card-face {
+        font-size: 18px;
+        line-height: 1.5;
+      }
+      .card-face-back {
+        display: none;
+      }
+      .card-preview.flipped .card-face-front {
+        display: none;
+      }
+      .card-preview.flipped .card-face-back {
+        display: block;
+      }
+      .card-html img {
+        max-width: 100%;
+        height: auto;
+      }
+      .card-meta {
+        margin-bottom: 12px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+      th {
+        background: #f8f8f8;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #666;
+        padding: 10px 12px;
+        text-align: left;
+      }
+      td {
+        padding: 10px 12px;
+        border-top: 1px solid #f0f0f0;
+        font-size: 14px;
+      }
+      tr:hover td {
+        background: #fafafa;
+      }
+      .status {
+        text-align: center;
+        padding: 40px;
+        color: #999;
+      }
+      #ws-status {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #ccc;
+        display: inline-block;
+      }
+      #ws-status.connected {
+        background: #4caf50;
+      }
+      #ws-status.disconnected {
+        background: #f44336;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>ankitron</h1>
+      <span class="badge" id="deck-name">loading...</span>
+      <span class="badge" id="row-count">...</span>
+      <span id="ws-status"></span>
+    </div>
+    <div class="tabs">
+      <div class="tab active" data-view="cards">Cards</div>
+      <div class="tab" data-view="table">Data</div>
+      <div class="tab" data-view="validation">Validation</div>
+    </div>
+    <div class="content" id="main-content">
+      <div class="status">Loading...</div>
+    </div>
+
+    <script type="module">
+      const state = {
+        view: "cards",
+        deck: null,
+        rows: [],
+        cards: [],
+        currentRow: 0,
+        flipped: false,
+        pollHandle: null,
+      };
+
+      async function fetchJSON(url) {
+        const r = await fetch(url);
+        if (!r.ok) {
+          throw new Error(`${r.status} ${r.statusText}`);
+        }
+        return r.json();
+      }
+
+      async function loadDeck() {
+        state.deck = await fetchJSON("/api/deck");
+        document.getElementById("deck-name").textContent = state.deck.name;
+        document.getElementById("row-count").textContent =
+          `${state.deck.row_count} rows`;
+
+        const rowData = await fetchJSON("/api/rows?limit=100");
+        state.rows = rowData.rows;
+        state.cards = state.deck.cards;
+
+        await render();
+      }
+
+      async function render() {
+        const el = document.getElementById("main-content");
+        if (state.view === "cards") await renderCards(el);
+        else if (state.view === "table") renderTable(el);
+        else if (state.view === "validation") await renderValidation(el);
+      }
+
+      function escapeHTML(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      async function loadRenderedCards(row) {
+        const pk = row.__pk || row[state.deck.pk_field];
+        return Promise.all(
+          state.cards.map((cardName) =>
+            fetchJSON(
+              `/api/card/${encodeURIComponent(cardName)}/${encodeURIComponent(pk)}`,
+            ),
+          ),
+        );
+      }
+
+      async function renderCards(el) {
+        if (!state.rows.length) {
+          el.innerHTML = '<div class="status">No data</div>';
+          return;
+        }
+        const row = state.rows[state.currentRow] || state.rows[0];
+        const renderedCards = await loadRenderedCards(row);
+
+        let html =
+          '<div class="card-controls">' +
+          `<button class="card-button" id="prev-row" ${state.currentRow === 0 ? "disabled" : ""}>Previous</button>` +
+          `<div class="card-meta">Row ${state.currentRow + 1} / ${state.rows.length} &nbsp; ${escapeHTML(state.deck.pk_field)}: ${escapeHTML(row[state.deck.pk_field] || "")}</div>` +
+          `<button class="card-button" id="next-row" ${state.currentRow >= state.rows.length - 1 ? "disabled" : ""}>Next</button>` +
+          '<button class="card-button" id="flip-cards">Flip</button>' +
+          "</div>";
+
+        for (const card of renderedCards) {
+          html +=
+            `<div class="card-preview ${state.flipped ? "flipped" : ""}">` +
+            `<div class="label">${escapeHTML(card.name)}</div>` +
+            `<div class="card-face card-face-front"><div class="card-html">${card.front}</div></div>` +
+            `<div class="card-face card-face-back"><div class="card-html">${card.back}</div></div>` +
+            "</div>";
+        }
+        el.innerHTML = html;
+
+        document
+          .getElementById("prev-row")
+          ?.addEventListener("click", async () => {
+            state.currentRow = Math.max(state.currentRow - 1, 0);
+            state.flipped = false;
+            await render();
+          });
+        document
+          .getElementById("next-row")
+          ?.addEventListener("click", async () => {
+            state.currentRow = Math.min(
+              state.currentRow + 1,
+              state.rows.length - 1,
+            );
+            state.flipped = false;
+            await render();
+          });
+        document.getElementById("flip-cards")?.addEventListener("click", () => {
+          state.flipped = !state.flipped;
+          document.querySelectorAll(".card-preview").forEach((card) => {
+            card.classList.toggle("flipped", state.flipped);
+          });
+        });
+        document.querySelectorAll(".card-preview").forEach((card) => {
+          card.addEventListener("click", () => {
+            card.classList.toggle("flipped");
+          });
+        });
+      }
+
+      function renderTable(el) {
+        if (!state.rows.length) {
+          el.innerHTML = '<div class="status">No data</div>';
+          return;
+        }
+        const keys = Object.keys(state.rows[0]);
+        let html = "<table><tr>";
+        keys.forEach((k) => {
+          html += `<th>${k}</th>`;
+        });
+        html += "</tr>";
+        state.rows.forEach((row) => {
+          html += "<tr>";
+          keys.forEach((k) => {
+            html += `<td>${row[k] || ""}</td>`;
+          });
+          html += "</tr>";
+        });
+        html += "</table>";
+        el.innerHTML = html;
+      }
+
+      async function renderValidation(el) {
+        const data = await fetchJSON("/api/validation");
+        if (!data.validators || !data.validators.length) {
+          el.innerHTML = '<div class="status">No validators configured</div>';
+          return;
+        }
+        let html =
+          "<table><tr><th>Validator</th><th>Status</th><th>Severity</th><th>Messages</th></tr>";
+        data.validators.forEach((v) => {
+          const status = v.passed ? "✅ Passed" : "❌ Failed";
+          const msgs = v.messages.join("; ");
+          html +=
+            "<tr><td>" +
+            v.name +
+            "</td><td>" +
+            status +
+            "</td><td>" +
+            v.severity +
+            "</td><td>" +
+            msgs +
+            "</td></tr>";
+        });
+        html += "</table>";
+        el.innerHTML = html;
+      }
+
+      // Tab switching
+      document.querySelectorAll(".tab").forEach((tab) => {
+        tab.addEventListener("click", async () => {
+          document.querySelectorAll(".tab").forEach((t) => {
+            t.classList.remove("active");
+          });
+          tab.classList.add("active");
+          state.view = tab.dataset.view;
+          await render();
+        });
+      });
+
+      // Keyboard navigation
+      document.addEventListener("keydown", async (e) => {
+        if (state.view === "cards") {
+          if (e.key === "ArrowRight") {
+            state.currentRow = Math.min(
+              state.currentRow + 1,
+              state.rows.length - 1,
+            );
+            state.flipped = false;
+            await render();
+          }
+          if (e.key === "ArrowLeft") {
+            state.currentRow = Math.max(state.currentRow - 1, 0);
+            state.flipped = false;
+            await render();
+          }
+          if (e.key === " ") {
+            e.preventDefault();
+            state.flipped = !state.flipped;
+            document.querySelectorAll(".card-preview").forEach((card) => {
+              card.classList.toggle("flipped", state.flipped);
+            });
+          }
+        }
+      });
+
+      async function pollDeck() {
+        const indicator = document.getElementById("ws-status");
+        try {
+          const deckMeta = await fetchJSON("/api/deck");
+          indicator.className = "connected";
+          if (!state.deck || state.deck.version !== deckMeta.version) {
+            state.currentRow = Math.min(
+              state.currentRow,
+              Math.max(deckMeta.row_count - 1, 0),
+            );
+            await loadDeck();
+          }
+        } catch (_err) {
+          indicator.className = "disconnected";
+        }
+      }
+
+      function startPolling() {
+        if (state.pollHandle !== null) {
+          clearInterval(state.pollHandle);
+        }
+        state.pollHandle = setInterval(() => {
+          void pollDeck();
+        }, 2000);
+      }
+
+      void loadDeck();
+      startPolling();
+    </script>
+  </body>
+</html>

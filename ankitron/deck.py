@@ -33,7 +33,9 @@ from ankitron.logging import (
 from ankitron.sources.wikidata.properties import PropertyValueType
 from ankitron.transform import Transform, apply_transform_chain
 
-_FIELD_REF_PATTERN = re.compile(r"\{\{(?!FrontSide|#|/|\^|type:)(\w+)\}\}")
+_FIELD_REF_PATTERN = re.compile(
+    r"\{\{(?!FrontSide|Tags|Type|Deck|Subdeck|CardFlag|Card|#|/|\^|type:|hint:|text:|cloze:|type:cloze:|type:nc:|c\d+::)(\w+)\}\}"
+)
 
 
 def _coerce_numeric(value: Any) -> Any:

@@ -12,12 +12,7 @@ ai = ["anthropic"]
 media = ["cairosvg>=2.7", "Pillow>=10.0"]
 maps = ["contextily>=1.4", "shapely>=2.0", "geopandas>=0.14", "matplotlib>=3.8"]
 charts = ["matplotlib>=3.8", "Pillow>=10.0"]
-preview = [
-    "fastapi>=0.100",
-    "uvicorn>=0.20",
-    "websockets>=11.0",
-    "watchdog>=3.0",
-]
+preview = ["fastapi>=0.135.2", "uvicorn>=0.42.0", "watchdog>=6.0.0"]
 all = [
     "ankitron[wikipedia]",
     "ankitron[ai]",

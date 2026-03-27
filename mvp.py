@@ -18,21 +18,14 @@ class USStates(Deck):
         fmt="~{:,.0f}",
     )
 
-    # TODO: The card ordering should be made stable (somehow) so adding or reordering cards to a deck won't erase progress.
     class capitals(Card):
         front = "What is the capital of {{state}}?"
-        back = "{{capital}}"
+        back = "{{FrontSide}}<br><hr>{{capital}}"
 
     class capitals_reverse(Card):
         front = "Which US state has {{capital}} as its capital?"
-        back = "{{state}}"
+        back = "{{FrontSide}}<br><hr>{{state}}"
 
     class populations(Card):
         front = "Approximately how many people live in {{state}}?"
-        back = "{{approximate_population}}"
-
-
-deck = USStates()
-deck.fetch()
-deck.preview()
-deck.export("us_states.apkg")
+        back = "{{FrontSide}}<br><hr>{{approximate_population}}"
