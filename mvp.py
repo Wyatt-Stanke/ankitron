@@ -1,4 +1,4 @@
-from ankitron import Deck, Card, Tag, AnkiTemplate, PKStrategy
+from ankitron import AnkiTemplate, Card, Deck, PKStrategy
 from ankitron.sources import WikidataSource
 from ankitron.sources.wikidata import P, Q, WikidataQuery
 

@@ -1,23 +1,25 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import requests
 
-from ankitron.cache import Cache
-from ankitron.enums import PKStrategy
-from ankitron.sources.wikidata.properties import WikidataProperty, PropertyValueType
-from ankitron.sources.wikidata.query import WikidataQuery, QueryType
+if TYPE_CHECKING:
+    from ankitron.cache import Cache
+
+from ankitron.enums import FieldRule, PKStrategy
 from ankitron.logging import (
-    section_header,
+    console,
+    log_cache_hit,
     log_info,
+    log_network,
     log_success,
     log_warn,
-    log_cache_hit,
-    log_network,
     make_progress,
-    console,
+    section_header,
 )
+from ankitron.sources.wikidata.properties import PropertyValueType, WikidataProperty
+from ankitron.sources.wikidata.query import QueryType, WikidataQuery
 
 WIKIDATA_SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
 
@@ -42,9 +44,7 @@ class WikidataSource:
     def _build_sparql(self, fields: list[tuple[str, Any]]) -> str:
         """Build a SPARQL query from the WikidataQuery and bound fields."""
         if self.query.query_type != QueryType.INSTANCES_OF:
-            raise NotImplementedError(
-                f"Query type {self.query.query_type} not yet supported."
-            )
+            raise NotImplementedError(f"Query type {self.query.query_type} not yet supported.")
 
         target_qid = self.query.target.id
         select_vars = ["?item"]
@@ -69,10 +69,8 @@ class WikidataSource:
                 if value_type == PropertyValueType.ENTITY:
                     select_vars.append(f"?{var_name}Label")
                     need_label_service = True
-                if field.optional:
-                    where_clauses.append(
-                        f"  OPTIONAL {{ ?item wdt:{source_key} ?{var_name} . }}"
-                    )
+                if field.rule != FieldRule.REQUIRED:
+                    where_clauses.append(f"  OPTIONAL {{ ?item wdt:{source_key} ?{var_name} . }}")
                 else:
                     where_clauses.append(f"  ?item wdt:{source_key} ?{var_name} .")
 
@@ -109,9 +107,7 @@ class WikidataSource:
         resp = requests.get(
             WIKIDATA_SPARQL_ENDPOINT,
             params={"query": sparql, "format": "json"},
-            headers={
-                "User-Agent": "ankitron/0.1.0 (https://github.com/Wyatt-Stanke/ankitron)"
-            },
+            headers={"User-Agent": "ankitron/0.1.0 (https://github.com/Wyatt-Stanke/ankitron)"},
             timeout=60,
         )
         resp.raise_for_status()
@@ -126,9 +122,7 @@ class WikidataSource:
 
         return self._parse_results(raw_data, fields)
 
-    def _parse_results(
-        self, raw_data: dict, fields: list[tuple[str, Any]]
-    ) -> list[dict[str, str]]:
+    def _parse_results(self, raw_data: dict, fields: list[tuple[str, Any]]) -> list[dict[str, str]]:
         """Parse SPARQL JSON results into list of dicts keyed by field attribute names."""
         bindings = raw_data.get("results", {}).get("bindings", [])
 
@@ -163,7 +157,7 @@ class WikidataSource:
                     else:
                         val = binding.get(attr_name, {}).get("value", "")
 
-                    row[attr_name] = val if val else ""
+                    row[attr_name] = val or ""
 
                     # Handle PK
                     if field.pk == PKStrategy.SOURCE_ID:

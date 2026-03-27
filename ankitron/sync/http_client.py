@@ -11,8 +11,8 @@ import zstandard
 
 ANKIWEB_BASE = "https://sync.ankiweb.net/"
 SYNC_VERSION = 11
-CLIENT_VER_SHORT = "25.9.2,ankisync,linux"
-CLIENT_VER_FULL = "anki,25.9.2 (ankisync),linux"
+CLIENT_VER_SHORT = "25.9.2,ankitron,linux"
+CLIENT_VER_FULL = "anki,25.9.2 (ankitron),linux"
 
 
 @dataclass
@@ -42,14 +42,16 @@ class AnkiWebClient:
         self._session = requests.Session()
 
     def _make_header(self) -> str:
-        return json.dumps({
-            "v": SYNC_VERSION,
-            "k": self.hkey,
-            "c": CLIENT_VER_SHORT,
-            "s": self.session_key,
-        })
+        return json.dumps(
+            {
+                "v": SYNC_VERSION,
+                "k": self.hkey,
+                "c": CLIENT_VER_SHORT,
+                "s": self.session_key,
+            }
+        )
 
-    def _post(self, path: str, data: bytes, *, is_json: bool = True) -> bytes:
+    def _post(self, path: str, data: bytes, *, _is_json: bool = True) -> bytes:
         """Send a zstd-compressed POST and return the decompressed response.
 
         Handles 308 redirects by updating the base URL and retrying.
@@ -111,7 +113,7 @@ class AnkiWebClient:
 
     def upload(self, collection_data: bytes) -> str:
         """Upload a collection file (raw SQLite bytes). Returns 'OK' on success."""
-        resp = self._post("sync/upload", collection_data, is_json=False)
+        resp = self._post("sync/upload", collection_data, _is_json=False)
         result = resp.decode("utf-8").strip()
         if result != "OK":
             raise SyncError(f"Upload failed: {result}")
@@ -120,7 +122,7 @@ class AnkiWebClient:
     def download(self) -> bytes:
         """Download the collection file from the server. Returns raw SQLite bytes."""
         body = b"{}"
-        return self._post("sync/download", body, is_json=False)
+        return self._post("sync/download", body, _is_json=False)
 
 
 class SyncError(Exception):

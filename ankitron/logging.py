@@ -1,15 +1,12 @@
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 from rich.progress import (
+    BarColumn,
     Progress,
     SpinnerColumn,
-    TextColumn,
-    BarColumn,
     TaskProgressColumn,
+    TextColumn,
 )
-from rich.text import Text
-from rich import box
 
 console = Console()
 _warning_count = 0
@@ -24,7 +21,7 @@ ICON_SUCCESS = "[bold green]✔[/bold green]"
 ICON_FAIL = "[bold red]✘[/bold red]"
 ICON_CACHE = "[bold yellow]🗲[/bold yellow]"
 ICON_NETWORK = "[bold cyan]↓[/bold cyan]"
-ICON_INFO = "[bold blue]ℹ[/bold blue]"
+ICON_INFO = "[bold blue]\N{INFORMATION SOURCE}[/bold blue]"
 ICON_WARN = "[bold yellow]⚠[/bold yellow]"
 
 
@@ -42,9 +39,13 @@ def log_success(message: str) -> None:
 
 
 def log_warn(message: str) -> None:
-    global _warning_count
-    _warning_count += 1
+    _increment_warning_count()
     console.print(f"  {ICON_WARN} {message}")
+
+
+def _increment_warning_count() -> None:
+    global _warning_count  # noqa: PLW0603
+    _warning_count += 1
 
 
 def log_error(message: str) -> None:
@@ -53,10 +54,7 @@ def log_error(message: str) -> None:
 
 def log_cache_hit(remaining_seconds: float) -> None:
     hours = remaining_seconds / 3600
-    if hours >= 24:
-        time_str = f"{hours / 24:.1f} days"
-    else:
-        time_str = f"{hours:.1f} hours"
+    time_str = f"{hours / 24:.1f} days" if hours >= 24 else f"{hours:.1f} hours"
     console.print(f"  {ICON_CACHE} Using cached data (expires in {time_str})")
 
 
@@ -75,6 +73,4 @@ def make_progress() -> Progress:
 
 
 def print_error_panel(title: str, body: str) -> None:
-    console.print(
-        Panel(body, title=f"[bold red]{title}[/bold red]", border_style="red")
-    )
+    console.print(Panel(body, title=f"[bold red]{title}[/bold red]", border_style="red"))

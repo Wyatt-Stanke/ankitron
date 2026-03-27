@@ -1,20 +1,22 @@
 from __future__ import annotations
 
-import genanki
 import html
+import os
 import re
+from pathlib import Path
+from typing import TYPE_CHECKING
 
+import genanki
+
+from ankitron.enums import MediaType
 from ankitron.identity import generate_deck_id, generate_model_id, generate_note_id
 from ankitron.logging import (
-    section_header,
     log_info,
     log_success,
-    make_progress,
-    console,
     log_warn,
+    make_progress,
+    section_header,
 )
-
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ankitron.deck import Deck, Tag
@@ -30,10 +32,10 @@ def sanitize_tag(tag: str) -> str:
     tag = tag.strip()
     tag = re.sub(r"\s+", "-", tag)
     tag = re.sub(r"-+", "-", tag)
-    return tag
+    return tag  # noqa: RET504
 
 
-def resolve_tags(tag_list: list[str | "Tag"], row: dict) -> list[str]:
+def resolve_tags(tag_list: list[str | Tag], row: dict) -> list[str]:
     """
     Resolve a mixed list of static strings and Tag objects
     into a flat list of sanitized tag strings for a single row.
@@ -52,7 +54,8 @@ def resolve_tags(tag_list: list[str | "Tag"], row: dict) -> list[str]:
             # Log warning and skip tag for this note
             pk_val = row.get("_pk_", row.get("id", "?"))
             log_warn(
-                f"Tag resolution failed for row '{pk_val}': {type(exc).__name__}: {exc}. Skipping tag."
+                f"Tag resolution failed for row '{pk_val}': "
+                f"{type(exc).__name__}: {exc}. Skipping tag."
             )
             continue
     return resolved
@@ -60,23 +63,43 @@ def resolve_tags(tag_list: list[str | "Tag"], row: dict) -> list[str]:
 
 def build_genanki_model(deck_cls: type[Deck]) -> genanki.Model:
     """Construct a genanki.Model from a Deck subclass's fields and cards."""
+    from ankitron.deck import _FIELD_REF_PATTERN
+    from ankitron.provenance import ProvenanceConfig, ProvenancePosition, render_provenance_html
+
     model_id = generate_model_id(deck_cls.__qualname__)
 
     gk_fields = [{"name": name} for name, f in deck_cls._all_fields if not f.internal]
 
+    # Check provenance config
+    prov_config: ProvenanceConfig | None = getattr(deck_cls, "provenance", None)
+    prov_enabled = (
+        prov_config is not None
+        and prov_config.enabled
+        and prov_config.position != ProvenancePosition.NONE
+    )
+
+    if prov_enabled:
+        gk_fields.append({"name": "_ankitron_provenance"})
+
     gk_templates = []
     for card_cls in deck_cls._deck_cards:
+        back = '{{FrontSide}}<hr id="answer">' + card_cls.back
+
+        if prov_enabled:
+            card_fields = _FIELD_REF_PATTERN.findall(card_cls.front + card_cls.back)
+            back += render_provenance_html(prov_config, card_fields or None)
+
         gk_templates.append(
             {
                 "name": card_cls.__name__,
                 "qfmt": card_cls.front,
-                "afmt": '{{FrontSide}}<hr id="answer">' + card_cls.back,
+                "afmt": back,
             }
         )
 
     return genanki.Model(
         model_id=model_id,
-        name=f"ankitron::{deck_cls._deck_name.lstrip('::').lstrip('ankitron::')}",
+        name=f"ankitron::{deck_cls._deck_name.removeprefix('ankitron::').lstrip(':')}",
         fields=gk_fields,
         templates=gk_templates,
     )
@@ -96,8 +119,7 @@ def export_deck(deck_instance: Deck, path: str) -> None:
 
     if not deck_instance._data:
         raise RuntimeError(
-            f"Deck '{deck_cls._deck_name}' has no rows of data. "
-            f"fetch() returned 0 results."
+            f"Deck '{deck_cls._deck_name}' has no rows of data. fetch() returned 0 results."
         )
 
     # Check PK uniqueness
@@ -128,29 +150,96 @@ def export_deck(deck_instance: Deck, path: str) -> None:
     # Build field attr name list in declaration order, excluding internal
     visible_attrs = [name for name, f in deck_cls._all_fields if not f.internal]
 
+    # Build map of media fields for bundling
+    media_fields = {
+        name: fld
+        for name, fld in deck_cls._all_fields
+        if fld.media is not None and not fld.internal
+    }
+    media_files: list[str] = []  # Paths of media files to bundle
+
+    # Check provenance
+    from ankitron.provenance import ProvenanceConfig, ProvenancePosition, provenance_to_json
+
+    prov_config: ProvenanceConfig | None = getattr(deck_cls, "provenance", None)
+    prov_enabled = (
+        prov_config is not None
+        and prov_config.enabled
+        and prov_config.position != ProvenancePosition.NONE
+    )
+    provenance_data = getattr(deck_instance, "_provenance", None)
+
     # Resolve tags
     if deck_cls._deck_tags:
         static_count = sum(1 for tag in deck_cls._deck_tags if isinstance(tag, str))
-        computed_count = sum(
-            1 for tag in deck_cls._deck_tags if not isinstance(tag, str)
-        )
-        log_info(f"Resolving tags...")
+        computed_count = sum(1 for tag in deck_cls._deck_tags if not isinstance(tag, str))
+        log_info("Resolving tags...")
         log_info(
-            f"  {len(deck_cls._deck_tags)} tag rules ({static_count} static, {computed_count} computed)"
+            f"  {len(deck_cls._deck_tags)} tag rules"
+            f" ({static_count} static, {computed_count} computed)"
         )
 
     with make_progress() as progress:
         task = progress.add_task("Creating notes", total=len(deck_instance._data))
         all_tags_set: set[str] = set()
 
-        for row in deck_instance._data:
+        for row_idx, row in enumerate(deck_instance._data):
             pk_val = row.get(f"_pk_{pk_field_attr}", row.get(pk_field_attr, ""))
             note_id = generate_note_id(deck_cls.__qualname__, pk_val)
 
+            # Process media fields: replace URL values with <img>/<sound> tags
+            for mf_name, mf_fld in media_fields.items():
+                val = row.get(mf_name, "")
+                if not val:
+                    continue
+                # Check if value looks like a file path or URL
+                if os.path.isfile(val):
+                    media_files.append(val)
+                    fname = os.path.basename(val)
+                    if mf_fld.media == MediaType.IMAGE:
+                        from ankitron.media.pipeline import make_img_tag
+
+                        row[mf_name] = make_img_tag(fname, mf_fld.width, mf_fld.height)
+                    elif mf_fld.media == MediaType.AUDIO:
+                        from ankitron.media.pipeline import make_sound_tag
+
+                        row[mf_name] = make_sound_tag(fname)
+                elif val.startswith(("http://", "https://")):
+                    # URL-based media — attempt to find in cache
+                    cache_dir = Path.home() / ".cache" / "ankitron" / "media"
+                    from ankitron.media.pipeline import generate_media_filename
+
+                    ext = mf_fld.format.value if mf_fld.format else "png"
+                    fname = generate_media_filename(deck_cls._deck_name, pk_val, mf_name, ext)
+                    cached_path = cache_dir / fname
+                    if cached_path.is_file():
+                        media_files.append(str(cached_path))
+                        if mf_fld.media == MediaType.IMAGE:
+                            from ankitron.media.pipeline import make_img_tag
+
+                            row[mf_name] = make_img_tag(fname, mf_fld.width, mf_fld.height)
+                        elif mf_fld.media == MediaType.AUDIO:
+                            from ankitron.media.pipeline import make_sound_tag
+
+                            row[mf_name] = make_sound_tag(fname)
+
             field_values = [html.escape(row.get(attr, "")) for attr in visible_attrs]
 
+            # Append provenance JSON if enabled
+            if prov_enabled and provenance_data and row_idx < len(provenance_data):
+                prov_json = provenance_to_json(
+                    provenance_data[row_idx],
+                    deck_cls._deck_name,
+                    pk_val,
+                    row.get(pk_field_attr, pk_val),
+                    visible_fields=visible_attrs,
+                )
+                field_values.append(prov_json)
+            elif prov_enabled:
+                field_values.append("")
+
             # Resolve tags for this row
-            tags_to_add = ["ankitron"] # Always add "ankitron" tag
+            tags_to_add = ["ankitron"]  # Always add "ankitron" tag
             if deck_cls._deck_tags:
                 tags_to_add.extend(resolve_tags(deck_cls._deck_tags, row))
 
@@ -170,10 +259,12 @@ def export_deck(deck_instance: Deck, path: str) -> None:
 
     # Log tag summary
     if deck_cls._deck_tags:
-        log_info(
-            f"  {len(all_tags_set)} unique tags across {len(deck_instance._data)} notes"
-        )
+        log_info(f"  {len(all_tags_set)} unique tags across {len(deck_instance._data)} notes")
         log_success("Tags resolved")
 
-    genanki.Package(gk_deck).write_to_file(path)
+    pkg = genanki.Package(gk_deck)
+    if media_files:
+        pkg.media_files = media_files
+        log_info(f"Bundling {len(media_files)} media files")
+    pkg.write_to_file(path)
     log_success(f"Exported {len(deck_instance._data)} notes to [bold]{path}[/bold]")

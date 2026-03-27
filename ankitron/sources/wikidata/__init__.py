@@ -1,13 +1,13 @@
-from ankitron.sources.wikidata.properties import P, WikidataProperty, PropertyValueType
 from ankitron.sources.wikidata.classes import Q, WikidataClass
-from ankitron.sources.wikidata.query import WikidataQuery, QueryType
+from ankitron.sources.wikidata.properties import P, PropertyValueType, WikidataProperty
+from ankitron.sources.wikidata.query import QueryType, WikidataQuery
 
 __all__ = [
     "P",
-    "Q",
-    "WikidataProperty",
-    "WikidataClass",
-    "WikidataQuery",
-    "QueryType",
     "PropertyValueType",
+    "Q",
+    "QueryType",
+    "WikidataClass",
+    "WikidataProperty",
+    "WikidataQuery",
 ]

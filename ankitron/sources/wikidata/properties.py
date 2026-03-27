@@ -38,8 +38,6 @@ _KNOWN_PROPERTIES: dict[str, tuple[str, PropertyValueType]] = {
     "TIMEZONE": ("P421", PropertyValueType.ENTITY),
 }
 
-_P_PATTERN = re.compile(r"^P?\d+$")
-
 
 class _PropertyAccessor:
     """

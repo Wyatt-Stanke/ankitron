@@ -16,7 +16,7 @@ from anki.import_export_pb2 import (
     ImportResponse,
 )
 
-from ankisync.http_client import AnkiWebClient, SyncMeta
+from ankitron.sync.http_client import AnkiWebClient, SyncMeta
 
 DEFAULT_COLLECTION_DIR = Path.home() / ".ankisync"
 DEFAULT_COLLECTION_PATH = DEFAULT_COLLECTION_DIR / "collection.anki2"
@@ -108,7 +108,6 @@ def _determine_sync_action(
     Returns one of: 'no_changes', 'normal_sync', 'full_upload', 'full_download', 'full_sync'
     """
     if remote_meta.schema != local_meta["schema"]:
-        # Schemas differ — full sync needed
         if local_empty and not remote_meta.empty:
             return "full_download"
         if remote_meta.empty and not local_empty:
@@ -126,15 +125,10 @@ def _determine_sync_action(
 def _do_upload(col: Collection, client: AnkiWebClient) -> str:
     """Close the collection, read the file, and upload it to AnkiWeb."""
     col_path = col.path
-
-    # Close the collection so the file is flushed. Use downgrade=False to keep schema 18.
     col.close(downgrade=False)
-
     col_data = Path(col_path).read_bytes()
     print(f"  Uploading {len(col_data):,} bytes...")
-    result = client.upload(col_data)
-
-    return result
+    return client.upload(col_data)
 
 
 def sync_to_ankiweb(
@@ -150,12 +144,6 @@ def sync_to_ankiweb(
 
     Safe-by-default: never overwrites or deletes remote data unless
     --full-upload is explicitly passed.
-
-    - Remote empty → uploads automatically (no data loss possible)
-    - Local newer, same schema → uploads automatically (additive)
-    - Conflicts / diverged schemas → reports status and exits without action
-    - --full-upload → replaces remote with local
-    - --full-download → replaces local with remote
     """
     result = SyncResult(dry_run=dry_run)
 
@@ -163,7 +151,6 @@ def sync_to_ankiweb(
         result.server_message = remote_meta.server_message
         print(f"  Server message: {remote_meta.server_message}")
 
-    # Explicit full download: replace local with remote
     if force_full_download:
         if dry_run:
             result.sync_action = "full download (forced)"
@@ -178,7 +165,6 @@ def sync_to_ankiweb(
         print("  Download complete.")
         return result
 
-    # Explicit full upload: replace remote with local
     if force_full_upload:
         if dry_run:
             result.sync_action = "full upload (forced)"
@@ -190,7 +176,6 @@ def sync_to_ankiweb(
         print("  Upload complete.")
         return result
 
-    # Auto-detect sync action
     local_empty = col.is_empty()
     local_meta = _get_local_meta(col)
     action = _determine_sync_action(local_meta, remote_meta, local_empty)
@@ -200,7 +185,6 @@ def sync_to_ankiweb(
         print("  Already in sync — no changes needed.")
 
     elif action == "full_upload" and remote_meta.empty:
-        # Remote is empty — safe to upload (nothing to overwrite)
         if dry_run:
             result.sync_action = "upload (remote empty)"
             print("  [dry-run] Would upload to empty remote collection")
@@ -211,7 +195,6 @@ def sync_to_ankiweb(
         print("  Upload complete.")
 
     elif action == "normal_sync" and local_meta["modified"] > remote_meta.modified:
-        # Same schema, local is newer — safe to push changes
         if dry_run:
             result.sync_action = "upload (local newer)"
             print("  [dry-run] Would upload (local collection is newer)")
@@ -222,20 +205,17 @@ def sync_to_ankiweb(
         print("  Upload complete.")
 
     elif action == "normal_sync":
-        # Same schema but remote is newer — do not touch remote
         result.sync_action = "skipped (remote newer)"
         print("  Remote collection is newer than local.")
         print("  Use --full-download to replace local with remote,")
         print("  or --full-upload to replace remote with local.")
 
     elif action == "full_download":
-        # Local is empty, remote has data — do not auto-download
         result.sync_action = "skipped (local empty, remote has data)"
         print("  Local collection is empty but remote has data.")
         print("  Use --full-download to pull remote data into your local collection.")
 
     elif action == "full_sync":
-        # Schemas diverged — do not touch anything
         result.sync_action = "skipped (schemas diverged)"
         print("  Local and remote collections have diverged (different schemas).")
         print("  Use --full-upload to replace remote with local,")
@@ -274,9 +254,7 @@ def run_sync(
     try:
         if full_download_import_sync:
             if dry_run:
-                print(
-                    "\n[dry-run] Would download remote collection before importing FILEs"
-                )
+                print("\n[dry-run] Would download remote collection before importing FILEs")
             else:
                 print("\nLogging in to AnkiWeb...")
                 client = AnkiWebClient(endpoint)
@@ -296,15 +274,12 @@ def run_sync(
                 if pre_result.server_message:
                     result.server_message = pre_result.server_message
 
-                # Full download closes and replaces the collection file; reopen it before import.
                 col = open_collection(collection_path)
                 print("  Reopened local collection after full download.")
 
         for apkg_path in apkg_files:
             print(f"\nImporting {apkg_path}...")
-            log = import_apkg(
-                col, apkg_path, dry_run=dry_run, allow_updates=allow_updates
-            )
+            log = import_apkg(col, apkg_path, dry_run=dry_run, allow_updates=allow_updates)
             result.imported_files.append(apkg_path)
 
             if log is not None:
@@ -314,9 +289,7 @@ def run_sync(
                 result.notes_added += n_new
                 result.notes_updated += n_updated
                 result.notes_duplicate += n_dup
-                print(
-                    f"  Added: {n_new}, Updated: {n_updated}, Duplicates (skipped): {n_dup}"
-                )
+                print(f"  Added: {n_new}, Updated: {n_updated}, Duplicates (skipped): {n_dup}")
 
         note_count = col.note_count()
         card_count = col.card_count()
@@ -347,9 +320,9 @@ def run_sync(
             result.server_message = sync_result.server_message
 
     finally:
-        try:
+        import contextlib
+
+        with contextlib.suppress(Exception):
             col.close()
-        except Exception:
-            pass
 
     return result

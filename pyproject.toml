@@ -1,15 +1,36 @@
 [project]
 name = "ankitron"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.11"
 dependencies = ["genanki", "requests", "rich"]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-mock", "types-requests"]
+dev = ["pytest", "pytest-mock", "types-requests", "ruff>=0.8"]
 sync = ["anki", "zstandard"]
+wikipedia = ["mwparserfromhell>=0.6"]
+ai = ["anthropic"]
+media = ["cairosvg>=2.7", "Pillow>=10.0"]
+maps = ["contextily>=1.4", "shapely>=2.0", "geopandas>=0.14", "matplotlib>=3.8"]
+charts = ["matplotlib>=3.8", "Pillow>=10.0"]
+preview = [
+    "fastapi>=0.100",
+    "uvicorn>=0.20",
+    "websockets>=11.0",
+    "watchdog>=3.0",
+]
+all = [
+    "ankitron[wikipedia]",
+    "ankitron[ai]",
+    "ankitron[media]",
+    "ankitron[maps]",
+    "ankitron[charts]",
+    "ankitron[preview]",
+    "ankitron[sync]",
+]
 
 [project.scripts]
-ankisync = "ankisync.cli:main"
+ankitron = "ankitron.cli.main:main"
+ankisync = "ankisync.cli:main"      # deprecated alias
 
 [build-system]
 requires = ["setuptools>=68.0"]
@@ -17,3 +38,80 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["ankitron*", "ankisync*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "F",    # pyflakes
+    "E",
+    "W",    # pycodestyle
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "A",    # flake8-builtins
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "RUF",  # ruff-specific
+    "PIE",  # flake8-pie
+    "PT",   # flake8-pytest-style
+    "RET",  # flake8-return
+    "ARG",  # flake8-unused-arguments
+    "PLC",  # pylint convention
+    "PLE",  # pylint error
+    "PLW",  # pylint warning
+    "PERF", # perflint
+    "FLY",  # flynt
+    "FURB", # refurb
+    "LOG",  # flake8-logging
+    "G",    # flake8-logging-format
+    "T20",  # flake8-print
+    "DTZ",  # flake8-datetimez
+    "FA",   # flake8-future-annotations
+    "ISC",  # flake8-implicit-str-concat
+    "ICN",  # flake8-import-conventions
+    "TID",  # flake8-tidy-imports
+    "RSE",  # flake8-raise
+    "S",    # flake8-bandit (security)
+    "FBT",  # flake8-boolean-trap
+    "COM",  # flake8-commas
+]
+ignore = [
+    "S101",    # assert usage OK in tests
+    "COM812",  # trailing comma conflicts with formatter
+    "ISC001",  # implicit string concat conflicts with formatter
+    "T201",    # print() OK — CLI tool uses it
+    "FBT001",  # bool positional args OK in dataclass fields
+    "FBT002",  # bool default values OK in dataclass fields
+    "FBT003",  # bool positional values OK in function calls
+    "PLC0415", # lazy/deferred imports are intentional (optional deps)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"ankitron/cli/*" = ["T20"]
+"mvp.py" = ["T20", "E501", "N801"] # card class names match Anki conventions
+"ankitron/sources/*.py" = ["N802", "ARG002"] # Field() factories + stub args
+"ankitron/sources/wikidata/*.py" = ["N802"]
+"ankitron/validation/validators.py" = [
+    "A002",
+    "ARG002",
+    "E501",
+] # min/max kwargs + field_attrs + method sigs
+"ankitron/transform.py" = [
+    "A002",
+    "ARG001",
+    "ARG002",
+] # min/max kwargs + stub args
+"ankitron/preview/server.py" = ["E501"] # embedded HTML templates
+"ankitron/provenance.py" = ["E501"] # embedded CSS/JS/HTML strings
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
