@@ -573,7 +573,7 @@ def _cmd_diff(args: argparse.Namespace) -> int:
             if pk in existing_notes:
                 for field_name in visible:
                     old_val = existing_notes[pk].get(field_name, "")
-                    new_val = new_rowield_name, "")
+                    new_val = new_row.get(field_name, "")
                     if old_val != new_val:
                         changed.append((pk, field_name, old_val, new_val))
 
