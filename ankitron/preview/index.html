@@ -412,13 +412,23 @@
           const sourceKey = rec.source_key
             ? ` -> ${escapeHTML(rec.source_key)}`
             : "";
-          const value = escapeHTML(rec.formatted_value || rec.raw_value || "");
+          const value = escapeHTML(
+            rec.formatted_value ??
+              (rec.raw_value != null ? String(rec.raw_value) : ""),
+          );
           const fetchedAt = rec.fetched_at
             ? `<div>Fetched: ${escapeHTML(rec.fetched_at)}</div>`
             : "";
           const sourceLink = rec.source_url
             ? `<div>Source URL: <a href="${escapeHTML(rec.source_url)}" target="_blank" rel="noreferrer">${escapeHTML(rec.source_url)}</a></div>`
             : "";
+          const derivedFrom = rec.derived_from
+            ? `<div>Derived from: <strong>${escapeHTML(rec.derived_from)}</strong></div>`
+            : "";
+          const computedFrom =
+            Array.isArray(rec.computed_from) && rec.computed_from.length
+              ? `<div>Computed from: <strong>${escapeHTML(rec.computed_from.join(", "))}</strong></div>`
+              : "";
 
           html += '<div class="prov-field">';
           html += '<div class="prov-header">';
@@ -431,6 +441,8 @@
           html += '<div class="prov-meta">';
           html += `<div>Value: ${value}</div>`;
           html += `<div>From: ${source}${sourceKey}</div>`;
+          html += derivedFrom;
+          html += computedFrom;
           html += sourceLink;
           html += fetchedAt;
           html += "</div>";
@@ -443,7 +455,15 @@
             for (const step of rec.transform_chain) {
               const name = escapeHTML(step.name || "transform");
               const desc = escapeHTML(step.description || "");
-              html += `<li>${name}${desc ? `: ${desc}` : ""}</li>`;
+              const inputVal =
+                step.input_value != null
+                  ? escapeHTML(String(step.input_value))
+                  : "";
+              const outputVal =
+                step.output_value != null
+                  ? escapeHTML(String(step.output_value))
+                  : "";
+              html += `<li>${name}${desc ? `: ${desc}` : ""}${inputVal || outputVal ? ` (${inputVal} -> ${outputVal})` : ""}</li>`;
             }
             html += "</ul>";
           }

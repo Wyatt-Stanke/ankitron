@@ -631,11 +631,64 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
             print(f"Error: no row with PK '{args.pk}' found.", file=sys.stderr)
             return 1
 
+        target_provenance: dict[str, Any] = {}
+        prov_rows = getattr(instance, "_provenance", None) or []
+        for row_idx, row in enumerate(instance._data or []):
+            pk = row.get(f"_pk_{pk_attr}", row.get(pk_attr, ""))
+            if pk == args.pk:
+                if row_idx < len(prov_rows):
+                    target_provenance = prov_rows[row_idx] or {}
+                break
+
+        def _serialize_prov_record(rec: Any) -> dict[str, Any]:
+            out: dict[str, Any] = {
+                "source_type": rec.source_type,
+                "source_name": rec.source_name,
+                "source_key": rec.source_key,
+                "source_url": rec.source_url,
+                "source_entity_id": rec.source_entity_id,
+                "raw_value": rec.raw_value,
+                "raw_type": rec.raw_type,
+                "formatted_value": rec.formatted_value,
+                "fmt": rec.fmt,
+                "derived_from": rec.derived_from,
+                "computed_from": rec.computed_from,
+                "overridden": rec.overridden,
+                "original_value": rec.original_value,
+                "ai_generated": rec.ai_generated,
+                "ai_model": rec.ai_model,
+                "ai_reviewed": rec.ai_reviewed,
+                "fetched_at": rec.fetched_at.isoformat() if rec.fetched_at else None,
+                "cached": rec.cached,
+                "flagged": rec.flagged,
+                "flag_note": rec.flag_note,
+            }
+            out["transform_chain"] = [
+                {
+                    "name": step.name,
+                    "description": step.description,
+                    "input_value": step.input_value,
+                    "output_value": step.output_value,
+                }
+                for step in rec.transform_chain
+            ]
+            return out
+
         if args.json:
             visible = [n for n, f in deck_cls._all_fields if not f.internal]
             if args.field:
                 visible = [v for v in visible if v == args.field]
-            output = {k: target_row.get(k, "") for k in visible}
+            output = {
+                "deck": deck_cls._deck_name,
+                "pk_field": pk_attr,
+                "pk": args.pk,
+                "values": {k: target_row.get(k, "") for k in visible},
+                "provenance": {},
+            }
+            for field_name in visible:
+                rec = target_provenance.get(field_name)
+                if rec is not None:
+                    output["provenance"][field_name] = _serialize_prov_record(rec)
             print(json_mod.dumps(output, indent=2, default=str))
         else:
             fields_to_show = deck_cls._all_fields
@@ -656,6 +709,45 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
                     flags.append(f"pk={fld.pk.name}")
                 flag_str = f" [{', '.join(flags)}]" if flags else ""
                 print(f"  {name} ({kind}{flag_str}): {val}")
+
+                rec = target_provenance.get(name)
+                if rec is not None:
+                    src = rec.source_name or rec.source_type or "unknown"
+                    src_key = f" -> {rec.source_key}" if rec.source_key else ""
+                    print(f"    source: {src}{src_key}")
+                    if rec.source_url:
+                        print(f"    source_url: {rec.source_url}")
+                    if rec.derived_from:
+                        print(f"    derived_from: {rec.derived_from}")
+                    if rec.computed_from:
+                        print(f"    computed_from: {', '.join(rec.computed_from)}")
+                    if rec.fmt:
+                        print(f"    format: {rec.fmt}")
+                    if rec.formatted_value is not None:
+                        print(f"    formatted_value: {rec.formatted_value}")
+                    if rec.raw_value is not None:
+                        print(f"    raw_value ({rec.raw_type}): {rec.raw_value}")
+                    if rec.fetched_at:
+                        print(f"    fetched_at: {rec.fetched_at.isoformat()}")
+                    print(f"    cached: {rec.cached}")
+                    if rec.overridden:
+                        print(f"    overridden: True (original: {rec.original_value})")
+                    if rec.ai_generated:
+                        print(
+                            f"    ai_generated: True"
+                            + (f" (model: {rec.ai_model})" if rec.ai_model else "")
+                        )
+                    if rec.flagged:
+                        print(
+                            "    flagged: True" + (f" ({rec.flag_note})" if rec.flag_note else "")
+                        )
+                    if rec.transform_chain:
+                        print("    transforms:")
+                        for step in rec.transform_chain:
+                            print(
+                                f"      - {step.name}: {step.description}"
+                                f" | in={step.input_value!r} out={step.output_value!r}"
+                            )
 
         if args.render:
             for card_cls in deck_cls._deck_cards:
