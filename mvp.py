@@ -25,6 +25,8 @@ class USStates(Deck):
         fmt="~{:,.0f}",
     )
 
+    flag = wikidata.Field(P.FLAG_IMAGE)
+
     class capitals(Card):
         front = "What is the capital of {{state}}?"
         back = "{{FrontSide}}<br><hr>{{capital}}"
