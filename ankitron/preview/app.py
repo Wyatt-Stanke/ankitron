@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict, is_dataclass
+from datetime import datetime
 from typing import Any
 
 from ankitron.deck import _FIELD_REF_PATTERN
@@ -33,6 +35,28 @@ def _pk_matches(row: dict[str, Any], pk_attr: str, requested_pk: str) -> bool:
     return requested_pk in {canonical_pk, display_pk}
 
 
+def _json_safe(value: Any) -> Any:
+    """Convert values to JSON-safe primitives for API responses."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if is_dataclass(value):
+        return {k: _json_safe(v) for k, v in asdict(value).items()}
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return [_json_safe(v) for v in value]
+    return value
+
+
+def _serialize_provenance_row(prov_row: dict[str, Any] | None) -> dict[str, Any]:
+    """Serialize one row's provenance records keyed by field name."""
+    if not prov_row:
+        return {}
+    return {field_name: _json_safe(record) for field_name, record in prov_row.items()}
+
+
 def create_preview_app(
     frontend_html: str,
     state: dict[str, Any],
@@ -62,6 +86,7 @@ def create_preview_app(
         data = runtime()
         cls = data["deck"]
         instance = data["instance"]
+        has_provenance = bool(getattr(instance, "_provenance", None))
         return JSONResponse(
             {
                 "name": cls._deck_name,
@@ -72,6 +97,7 @@ def create_preview_app(
                 ],
                 "cards": [card.__name__ for card in cls._deck_cards],
                 "row_count": len(instance._data or []),
+                "has_provenance": has_provenance,
                 "version": data["version"],
             }
         )
@@ -103,6 +129,31 @@ def create_preview_app(
                 out["__pk"] = row.get(f"_pk_{pk_attr}", row.get(pk_attr, ""))
                 return JSONResponse(out)
         return JSONResponse({"error": "not found"}, status_code=404)
+
+    @app.get("/api/provenance/{pk}")
+    async def api_provenance(pk: str) -> JSONResponse:
+        data = runtime()
+        cls = data["deck"]
+        instance = data["instance"]
+        pk_attr = cls._pk_field_attr
+        provenance_rows = getattr(instance, "_provenance", None) or []
+
+        if not provenance_rows:
+            return JSONResponse({"error": "provenance not available"}, status_code=404)
+
+        for row_idx, row in enumerate(instance._data or []):
+            if _pk_matches(row, pk_attr, pk):
+                prov_row = provenance_rows[row_idx] if row_idx < len(provenance_rows) else {}
+                return JSONResponse(
+                    {
+                        "__pk": row.get(f"_pk_{pk_attr}", row.get(pk_attr, "")),
+                        "field": pk_attr,
+                        "display": row.get(pk_attr, ""),
+                        "provenance": _serialize_provenance_row(prov_row),
+                    }
+                )
+
+        return JSONResponse({"error": "row not found"}, status_code=404)
 
     @app.get("/api/card/{card_type}/{pk}")
     async def api_card(card_type: str, pk: str) -> JSONResponse:

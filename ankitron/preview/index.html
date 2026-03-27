@@ -41,6 +41,7 @@
         background: #fff;
         border-bottom: 1px solid #ddd;
         padding: 0 20px;
+        flex-wrap: wrap;
       }
       .tab {
         padding: 10px 16px;
@@ -149,6 +150,47 @@
         padding: 40px;
         color: #999;
       }
+      .prov-list {
+        display: grid;
+        gap: 10px;
+      }
+      .prov-field {
+        background: #fff;
+        border-radius: 8px;
+        border: 1px solid #e9e9e9;
+        padding: 12px;
+      }
+      .prov-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+      }
+      .prov-name {
+        font-weight: 600;
+        color: #222;
+      }
+      .prov-tag {
+        font-size: 11px;
+        border: 1px solid #d8d8d8;
+        color: #666;
+        border-radius: 999px;
+        padding: 2px 8px;
+      }
+      .prov-meta {
+        font-size: 13px;
+        color: #555;
+        line-height: 1.45;
+      }
+      .prov-meta a {
+        color: #255f9b;
+      }
+      .prov-transforms {
+        margin-top: 6px;
+        padding-left: 18px;
+        color: #666;
+        font-size: 12px;
+      }
       #ws-status {
         width: 8px;
         height: 8px;
@@ -174,6 +216,7 @@
     <div class="tabs">
       <div class="tab active" data-view="cards">Cards</div>
       <div class="tab" data-view="table">Data</div>
+      <div class="tab" data-view="provenance">Provenance</div>
       <div class="tab" data-view="validation">Validation</div>
     </div>
     <div class="content" id="main-content">
@@ -209,6 +252,18 @@
         state.rows = rowData.rows;
         state.cards = state.deck.cards;
 
+        if (!state.deck.has_provenance && state.view === "provenance") {
+          state.view = "cards";
+          document.querySelectorAll(".tab").forEach((t) => {
+            t.classList.toggle("active", t.dataset.view === "cards");
+          });
+        }
+
+        const provTab = document.querySelector('[data-view="provenance"]');
+        if (provTab) {
+          provTab.style.display = state.deck.has_provenance ? "block" : "none";
+        }
+
         await render();
       }
 
@@ -216,6 +271,7 @@
         const el = document.getElementById("main-content");
         if (state.view === "cards") await renderCards(el);
         else if (state.view === "table") renderTable(el);
+        else if (state.view === "provenance") await renderProvenance(el);
         else if (state.view === "validation") await renderValidation(el);
       }
 
@@ -315,6 +371,103 @@
         });
         html += "</table>";
         el.innerHTML = html;
+      }
+
+      async function renderProvenance(el) {
+        if (!state.rows.length) {
+          el.innerHTML = '<div class="status">No data</div>';
+          return;
+        }
+        if (!state.deck.has_provenance) {
+          el.innerHTML =
+            '<div class="status">Provenance is not enabled for this deck</div>';
+          return;
+        }
+
+        const row = state.rows[state.currentRow] || state.rows[0];
+        const pk = row.__pk || row[state.deck.pk_field];
+        const data = await fetchJSON(
+          `/api/provenance/${encodeURIComponent(pk)}`,
+        );
+        const entries = Object.entries(data.provenance || {});
+
+        if (!entries.length) {
+          el.innerHTML =
+            '<div class="status">No provenance records for this row</div>';
+          return;
+        }
+
+        let html =
+          '<div class="card-controls">' +
+          `<button class="card-button" id="prov-prev-row" ${state.currentRow === 0 ? "disabled" : ""}>Previous</button>` +
+          `<div class="card-meta">Row ${state.currentRow + 1} / ${state.rows.length} &nbsp; ${escapeHTML(state.deck.pk_field)}: ${escapeHTML(row[state.deck.pk_field] || "")}</div>` +
+          `<button class="card-button" id="prov-next-row" ${state.currentRow >= state.rows.length - 1 ? "disabled" : ""}>Next</button>` +
+          "</div>";
+
+        html += '<div class="prov-list">';
+        for (const [fieldName, rec] of entries) {
+          const source = escapeHTML(
+            rec.source_name || rec.source_type || "unknown",
+          );
+          const sourceKey = rec.source_key
+            ? ` -> ${escapeHTML(rec.source_key)}`
+            : "";
+          const value = escapeHTML(rec.formatted_value || rec.raw_value || "");
+          const fetchedAt = rec.fetched_at
+            ? `<div>Fetched: ${escapeHTML(rec.fetched_at)}</div>`
+            : "";
+          const sourceLink = rec.source_url
+            ? `<div>Source URL: <a href="${escapeHTML(rec.source_url)}" target="_blank" rel="noreferrer">${escapeHTML(rec.source_url)}</a></div>`
+            : "";
+
+          html += '<div class="prov-field">';
+          html += '<div class="prov-header">';
+          html += `<span class="prov-name">${escapeHTML(fieldName)}</span>`;
+          html += `<span class="prov-tag">${escapeHTML(rec.source_type || "source")}</span>`;
+          if (rec.overridden)
+            html += '<span class="prov-tag">overridden</span>';
+          if (rec.ai_generated) html += '<span class="prov-tag">AI</span>';
+          html += "</div>";
+          html += '<div class="prov-meta">';
+          html += `<div>Value: ${value}</div>`;
+          html += `<div>From: ${source}${sourceKey}</div>`;
+          html += sourceLink;
+          html += fetchedAt;
+          html += "</div>";
+
+          if (
+            Array.isArray(rec.transform_chain) &&
+            rec.transform_chain.length
+          ) {
+            html += '<ul class="prov-transforms">';
+            for (const step of rec.transform_chain) {
+              const name = escapeHTML(step.name || "transform");
+              const desc = escapeHTML(step.description || "");
+              html += `<li>${name}${desc ? `: ${desc}` : ""}</li>`;
+            }
+            html += "</ul>";
+          }
+
+          html += "</div>";
+        }
+        html += "</div>";
+        el.innerHTML = html;
+
+        document
+          .getElementById("prov-prev-row")
+          ?.addEventListener("click", async () => {
+            state.currentRow = Math.max(state.currentRow - 1, 0);
+            await render();
+          });
+        document
+          .getElementById("prov-next-row")
+          ?.addEventListener("click", async () => {
+            state.currentRow = Math.min(
+              state.currentRow + 1,
+              state.rows.length - 1,
+            );
+            await render();
+          });
       }
 
       async function renderValidation(el) {
