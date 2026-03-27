@@ -2,6 +2,7 @@ from ankitron import AnkiTemplate, Card, Deck, PKStrategy
 from ankitron.provenance import ProvenanceConfig
 from ankitron.sources import WikidataSource
 from ankitron.sources.wikidata import P, Q, WikidataQuery
+from ankitron.transform import Transform
 
 
 class USStates(Deck):
@@ -16,7 +17,12 @@ class USStates(Deck):
 
     _population = wikidata.Field(P.POPULATION, fmt="{:,}", internal=True)
     approximate_population = _population.derive(
-        transform=lambda x: round(x, -5) if x > 1_000_000 else round(x, -4),
+        transform=Transform.round_to_nearest(
+            {
+                3_000_000: 100_000,
+                float("inf"): 500_000,
+            }
+        ),
         fmt="~{:,.0f}",
     )
 
