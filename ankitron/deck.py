@@ -49,6 +49,47 @@ def _coerce_numeric(value: Any) -> Any:
     return value
 
 
+def _build_transform_steps_for_prov(
+    transform: Any,
+    input_val: Any,
+    output_val: Any,
+) -> list:
+    """Decompose a Transform (possibly chained) into TransformStep list for provenance."""
+    from ankitron.provenance import TransformStep
+    from ankitron.transform import ChainedTransform, DatasetAwareTransform
+
+    if isinstance(transform, ChainedTransform):
+        steps_out: list = []
+        cur = input_val
+        for step in transform.steps:
+            if isinstance(step, DatasetAwareTransform):
+                out = None
+            else:
+                try:
+                    out = step.apply(cur)
+                except Exception:
+                    out = None
+            steps_out.append(
+                TransformStep(
+                    name=step.name,
+                    description=step.description,
+                    input_value=cur,
+                    output_value=out,
+                )
+            )
+            if out is not None:
+                cur = out
+        return steps_out
+    return [
+        TransformStep(
+            name=transform.name,
+            description=transform.description,
+            input_value=input_val,
+            output_value=output_val,
+        )
+    ]
+
+
 @dataclass
 class Field:
     """Represents a single piece of data on every row/record."""
@@ -660,19 +701,40 @@ class Deck:
 
         # Initialise provenance records after source fetching
         if prov_enabled:
+            from datetime import UTC
+            from datetime import datetime as _dt
+
+            from ankitron.sources.wikidata.wikidata import (
+                WikidataSource as _WikidataSource,
+            )
             source_attr_by_id = {id(src): name for name, src in source_entries}
             for _row_idx, row in enumerate(all_rows):
                 prov_row: dict[str, ProvenanceRecord] = {}
+                item_uri = row.get("_item_uri", "")
+                qid = item_uri.rsplit("/", 1)[-1] if item_uri else None
                 for attr_name, fld in cls._all_fields:
-                    if fld.is_derived or fld.is_computed:
+                    # Derived, computed, and cascade fields are populated later in the pipeline
+                    if fld.is_derived or fld.is_computed or fld.is_cascade:
                         continue
                     src = fld._source
+                    cache_info = getattr(src, "_last_cache_info", None) if src else None
+                    is_wikidata = isinstance(src, _WikidataSource)
+                    raw_val = row.get(attr_name)
+                    entity_url = (
+                        f"https://www.wikidata.org/wiki/{qid}"
+                        if is_wikidata and qid
+                        else None
+                    )
                     prov_row[attr_name] = ProvenanceRecord(
                         source_type=type(src).__name__ if src else "unknown",
                         source_name=source_attr_by_id.get(id(src), "") if src else "",
                         source_key=fld._source_key,
-                        raw_value=row.get(attr_name),
-                        raw_type=type(row.get(attr_name)).__name__,
+                        source_url=entity_url,
+                        source_entity_id=(qid if is_wikidata else None),
+                        raw_value=raw_val,
+                        raw_type=type(raw_val).__name__,
+                        fetched_at=_dt.now(UTC),
+                        cached=(cache_info.get("cached", False) if cache_info else False),
                     )
                 all_provenance.append(prov_row)
 
@@ -739,14 +801,25 @@ class Deck:
             field_id_to_attr = {id(fld): name for name, fld in cls._all_fields}
             for attr_name, fld in cascade_fields:
                 source_attrs = [field_id_to_attr[id(src)] for src in fld._cascade_sources]
-                for row in all_rows:
+                for row_idx, row in enumerate(all_rows):
+                    chosen_attr: str | None = None
                     for src_attr in source_attrs:
                         val = row.get(src_attr)
                         if val is not None and (not isinstance(val, str) or val.strip()):
                             row[attr_name] = val
+                            chosen_attr = src_attr
                             break
                     else:
                         row[attr_name] = ""
+                    if prov_enabled and row_idx < len(all_provenance):
+                        prov_row = all_provenance[row_idx]
+                        prov_row[attr_name] = ProvenanceRecord(
+                            source_type="cascade",
+                            source_name="",
+                            raw_value=row[attr_name],
+                            raw_type=type(row[attr_name]).__name__,
+                            derived_from=chosen_attr,
+                        )
 
         # ── 6. Derivation chain (derived + computed fields) ──
         if cls._derived_order:
@@ -759,7 +832,7 @@ class Deck:
                     input_attrs = [field_id_to_attr[id(inp)] for inp in fld._computed_inputs]
                     transforms_applied.append(f"{attr_name} ← computed({', '.join(input_attrs)})")
 
-                    for row in all_rows:
+                    for row_idx, row in enumerate(all_rows):
                         input_vals = []
                         for inp_attr in input_attrs:
                             v = row.get(inp_attr, "")
@@ -779,6 +852,31 @@ class Deck:
 
                         row[attr_name] = str(val) if val is not None else ""
 
+                        if prov_enabled and row_idx < len(all_provenance):
+                            from ankitron.provenance import TransformStep
+                            fn_name = getattr(fld._computed_fn, "__name__", "computed_fn")
+                            raw_inputs = {
+                                ia: _coerce_numeric(row.get(ia, "")) for ia in input_attrs
+                            }
+                            prov_row = all_provenance[row_idx]
+                            prov_row[attr_name] = ProvenanceRecord(
+                                source_type="computed",
+                                source_name="",
+                                raw_value=raw_inputs,
+                                raw_type="dict",
+                                transformed=True,
+                                transform_chain=[
+                                    TransformStep(
+                                        name=fn_name,
+                                        description=f"computed({', '.join(input_attrs)})",
+                                        input_value=raw_inputs,
+                                        output_value=val,
+                                    )
+                                ],
+                                computed_from=input_attrs,
+                                formatted_value=row[attr_name],
+                            )
+
                 elif fld.is_derived:
                     parent_attr = field_id_to_attr[id(fld._parent)]
                     transforms_applied.append(f"{attr_name} ← {parent_attr}")
@@ -786,21 +884,39 @@ class Deck:
                     if isinstance(fld._transform, Transform):
                         # Use the Transform API
                         if fld._transform.is_dataset_aware:
-                            # Dataset-aware: batch apply
+                            # Dataset-aware: batch apply then record per-row provenance
                             parent_vals = [row.get(parent_attr, "") for row in all_rows]
                             converted = [
                                 _coerce_numeric(v) if v != "" else None for v in parent_vals
                             ]
                             results = apply_transform_chain(fld._transform, converted)
-                            for row, val in zip(all_rows, results, strict=False):
-                                row[attr_name] = str(val) if val is not None else ""
+                            for row_idx, (row, conv_val, result_val) in enumerate(
+                                zip(all_rows, converted, results, strict=False)
+                            ):
+                                row[attr_name] = str(result_val) if result_val is not None else ""
+                                if prov_enabled and row_idx < len(all_provenance):
+                                    steps = _build_transform_steps_for_prov(
+                                        fld._transform, conv_val, result_val
+                                    )
+                                    prov_row = all_provenance[row_idx]
+                                    prov_row[attr_name] = ProvenanceRecord(
+                                        source_type="derived",
+                                        source_name="",
+                                        derived_from=parent_attr,
+                                        raw_value=conv_val,
+                                        raw_type=type(conv_val).__name__,
+                                        transformed=True,
+                                        transform_chain=steps,
+                                        formatted_value=row[attr_name],
+                                    )
                         else:
                             # Per-row apply
-                            for row in all_rows:
+                            for row_idx, row in enumerate(all_rows):
                                 parent_val = row.get(parent_attr, "")
-                                val: Any = _coerce_numeric(parent_val)
+                                coerced_in = _coerce_numeric(parent_val)
+                                result_val = coerced_in
                                 try:
-                                    val = fld._transform.apply(val)
+                                    result_val = fld._transform.apply(coerced_in)
                                 except Exception as exc:
                                     pk_val = row.get(
                                         f"_pk_{cls._pk_field_attr}",
@@ -811,16 +927,32 @@ class Deck:
                                         f"on row '{pk_val}': {type(exc).__name__}: {exc}. "
                                         f"The source value was {parent_val!r}."
                                     ) from exc
-                                row[attr_name] = str(val) if val is not None else ""
+                                row[attr_name] = str(result_val) if result_val is not None else ""
+                                if prov_enabled and row_idx < len(all_provenance):
+                                    steps = _build_transform_steps_for_prov(
+                                        fld._transform, coerced_in, result_val
+                                    )
+                                    prov_row = all_provenance[row_idx]
+                                    prov_row[attr_name] = ProvenanceRecord(
+                                        source_type="derived",
+                                        source_name="",
+                                        derived_from=parent_attr,
+                                        raw_value=coerced_in,
+                                        raw_type=type(coerced_in).__name__,
+                                        transformed=True,
+                                        transform_chain=steps,
+                                        formatted_value=row[attr_name],
+                                    )
                     else:
-                        # Legacy callable transform
-                        for row in all_rows:
+                        # Legacy callable transform (or bare copy with no transform)
+                        for row_idx, row in enumerate(all_rows):
                             parent_val = row.get(parent_attr, "")
-                            val = _coerce_numeric(parent_val)
+                            coerced_in = _coerce_numeric(parent_val)
+                            result_val = coerced_in
 
                             if fld._transform is not None:
                                 try:
-                                    val = fld._transform(val)
+                                    result_val = fld._transform(coerced_in)
                                 except Exception as exc:
                                     pk_val = row.get(
                                         f"_pk_{cls._pk_field_attr}",
@@ -832,17 +964,55 @@ class Deck:
                                         f"The source value was {parent_val!r}."
                                     ) from exc
 
-                            row[attr_name] = str(val) if val is not None else ""
+                            row[attr_name] = str(result_val) if result_val is not None else ""
 
-                # Apply fmt per-row for this derived/computed field
+                            if prov_enabled and row_idx < len(all_provenance):
+                                from ankitron.provenance import TransformStep
+                                prov_row = all_provenance[row_idx]
+                                fn_name = (
+                                    getattr(fld._transform, "__name__", "custom")
+                                    if fld._transform is not None
+                                    else "copy"
+                                )
+                                chain = (
+                                    [
+                                        TransformStep(
+                                            name=fn_name,
+                                            description=f"{parent_attr} → {attr_name}",
+                                            input_value=coerced_in,
+                                            output_value=result_val,
+                                        )
+                                    ]
+                                    if fld._transform is not None
+                                    else []
+                                )
+                                prov_row[attr_name] = ProvenanceRecord(
+                                    source_type="derived",
+                                    source_name="",
+                                    derived_from=parent_attr,
+                                    raw_value=coerced_in,
+                                    raw_type=type(coerced_in).__name__,
+                                    transformed=fld._transform is not None,
+                                    transform_chain=chain,
+                                    formatted_value=row[attr_name],
+                                )
+
+                # Apply fmt per-row for this derived/computed field and update provenance
                 if fld.fmt:
-                    for row in all_rows:
+                    for row_idx, row in enumerate(all_rows):
                         val = row.get(attr_name, "")
                         if val:
                             numeric = _coerce_numeric(val)
                             if isinstance(numeric, (int, float)):
                                 with contextlib.suppress(ValueError, TypeError):
-                                    row[attr_name] = fld.fmt.format(numeric)
+                                    formatted = fld.fmt.format(numeric)
+                                    row[attr_name] = formatted
+                                    if prov_enabled and row_idx < len(all_provenance):
+                                        prov_row = all_provenance[row_idx]
+                                        rec = prov_row.get(attr_name)
+                                        if rec:
+                                            rec.fmt = fld.fmt
+                                            rec.formatted_value = formatted
 
             log_success(
                 f"{len(transforms_applied)} transform{'s' if len(transforms_applied) != 1 else ''} "
@@ -869,7 +1039,9 @@ class Deck:
                                     prov_rec.fmt = fld.fmt
                                     prov_rec.formatted_value = formatted
 
-        # Populate provenance for derived/computed fields
+        # Safety-net: ensure every field has at least a minimal provenance record.
+        # In normal operation all fields are populated inline above; this only fires
+        # for edge cases (e.g. a field type added without provenance wiring).
         if prov_enabled:
             field_id_to_attr = {id(fld): name for name, fld in cls._all_fields}
             for row_idx in range(len(all_rows)):
@@ -880,7 +1052,12 @@ class Deck:
                     if attr_name in prov_row:
                         continue
                     rec = ProvenanceRecord(
-                        source_type="derived" if fld.is_derived else "computed",
+                        source_type=(
+                            "derived" if fld.is_derived
+                            else "computed" if fld.is_computed
+                            else "cascade" if fld.is_cascade
+                            else "unknown"
+                        ),
                         source_name="",
                         raw_value=all_rows[row_idx].get(attr_name),
                         raw_type=type(all_rows[row_idx].get(attr_name)).__name__,

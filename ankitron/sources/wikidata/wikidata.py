@@ -30,6 +30,7 @@ class WikidataSource:
 
     def __init__(self, query: WikidataQuery) -> None:
         self.query = query
+        self._last_cache_info: dict | None = None
 
     def Field(self, prop: WikidataProperty, **kwargs: Any) -> Any:
         # Avoid circular import at module level
@@ -132,8 +133,10 @@ class WikidataSource:
             cached_data, remaining = cache.get(cache_params)
             if cached_data is not None:
                 log_cache_hit(remaining)
+                self._last_cache_info = {"cached": True, "remaining": float(remaining or 0)}
                 return self._parse_results(cached_data, fields)
 
+        self._last_cache_info = {"cached": False}
         log_network(WIKIDATA_SPARQL_ENDPOINT)
 
         resp = requests.get(
