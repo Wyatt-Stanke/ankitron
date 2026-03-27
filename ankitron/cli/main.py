@@ -226,6 +226,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sync_p.add_argument("--full-upload", action="store_true")
     sync_p.add_argument("--full-download", action="store_true")
+    sync_p.add_argument("--full-download-import-sync", action="store_true")
 
     return parser
 
@@ -493,6 +494,7 @@ def _cmd_sync(args: argparse.Namespace) -> int:
             force_full_upload=args.full_upload,
             force_full_download=args.full_download,
             allow_updates=args.allow_updates,
+            full_download_import_sync=args.full_download_import_sync,
         )
 
         if result.imported_files:
