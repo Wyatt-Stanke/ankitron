@@ -227,14 +227,11 @@ def _check_field_rules(cls: type, all_rows: list[dict[str, Any]]) -> None:
         for row in all_rows:
             val = row.get(attr_name)
             if val is None or (isinstance(val, str) and val.strip() == ""):
-                pk_val = row.get(
-                    f"_pk_{cls._pk_field_attr}", row.get(cls._pk_field_attr, "?")
-                )
+                pk_val = row.get(f"_pk_{cls._pk_field_attr}", row.get(cls._pk_field_attr, "?"))
                 missing_pks.append(str(pk_val))
         if missing_pks:
             msg = (
-                f"Field '{attr_name}' ({fld.rule.value}): "
-                f"{len(missing_pks)} row(s) missing values"
+                f"Field '{attr_name}' ({fld.rule.value}): {len(missing_pks)} row(s) missing values"
             )
             if fld.rule == FieldRule.REQUIRED:
                 raise RuntimeError(f"{cls.__name__}: {msg}. Aborting.")
@@ -342,9 +339,7 @@ def _apply_derivations(
                 try:
                     val = fld._computed_fn(*input_vals)
                 except Exception as exc:
-                    pk_val = row.get(
-                        f"_pk_{cls._pk_field_attr}", row.get(cls._pk_field_attr, "?")
-                    )
+                    pk_val = row.get(f"_pk_{cls._pk_field_attr}", row.get(cls._pk_field_attr, "?"))
                     raise RuntimeError(
                         f"{cls.__name__}: computed field '{attr_name}' failed "
                         f"on row '{pk_val}': {type(exc).__name__}: {exc}."

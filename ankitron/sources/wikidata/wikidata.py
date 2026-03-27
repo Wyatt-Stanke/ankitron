@@ -272,4 +272,3 @@ class WikidataSource:
 
             result.append(prov_row)
         return result
-

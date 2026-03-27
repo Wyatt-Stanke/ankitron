@@ -47,6 +47,7 @@ _FIELD_REF_PATTERN = re.compile(
     r"\{\{(?!FrontSide|Tags|Type|Deck|Subdeck|CardFlag|Card|#|/|\^|type:|hint:|text:|cloze:|type:cloze:|type:nc:|c\d+::)(\w+)\}\}"
 )
 
+
 @dataclass
 class Field:
     """Represents a single piece of data on every row/record."""
@@ -459,6 +460,7 @@ def _store_deck_metadata(
             cls._fields_by_source[src_id] = []
         cls._fields_by_source[src_id].append((attr_name, fld))
 
+
 class Deck:
     """
     Base class for deck definitions. Subclass to define a deck.
@@ -548,9 +550,7 @@ class Deck:
         sorted_sources = _toposort_sources(source_entries)
 
         # Steps 1-9
-        all_rows = _fetch_all_sources(
-            cls, self._cache, sorted_sources, cls._pk_field_attr, refresh
-        )
+        all_rows = _fetch_all_sources(cls, self._cache, sorted_sources, cls._pk_field_attr, refresh)
 
         all_provenance: list[dict[str, Any]] = []
         if prov_enabled:
@@ -569,9 +569,7 @@ class Deck:
         self._data = all_rows
         if prov_enabled:
             self._provenance = all_provenance
-            log_info(
-                f"Provenance: {len(all_provenance)} rows x {len(cls._all_fields)} fields"
-            )
+            log_info(f"Provenance: {len(all_provenance)} rows x {len(cls._all_fields)} fields")
         log_success(f"Loaded {len(self._data)} rows")
 
     def preview(self, max_rows: int = 10, mode: str = "table") -> None:
