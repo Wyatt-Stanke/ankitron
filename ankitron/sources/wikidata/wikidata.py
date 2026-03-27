@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from typing import TYPE_CHECKING, Any
 
 import requests
@@ -41,6 +42,36 @@ class WikidataSource:
             _source_value_type=prop.value_type,
         )
 
+    def _build_field_var_map(self, fields: list[tuple[str, Any]]) -> dict[str, str]:
+        """Build stable SPARQL variable names keyed by deck attribute name.
+
+        Variable names are derived from source keys (not deck labels) so renaming a
+        field does not invalidate cache entries tied to query text.
+        """
+        occurrence_by_key: dict[str, int] = {}
+        var_map: dict[str, str] = {}
+
+        for attr_name, field in fields:
+            source_key = field._source_key
+            if source_key in {"label", "description"}:
+                continue
+
+            occurrence_by_key[source_key] = occurrence_by_key.get(source_key, 0) + 1
+            occurrence = occurrence_by_key[source_key]
+
+            sanitized = "".join(ch.lower() if ch.isalnum() else "_" for ch in source_key).strip("_")
+            if not sanitized:
+                sanitized = "value"
+            key_hash = hashlib.sha256(source_key.encode("utf-8")).hexdigest()[:8]
+
+            var_name = f"v_{sanitized}_{key_hash}"
+            if occurrence > 1:
+                var_name = f"{var_name}_{occurrence}"
+
+            var_map[attr_name] = var_name
+
+        return var_map
+
     def _build_sparql(self, fields: list[tuple[str, Any]]) -> str:
         """Build a SPARQL query from the WikidataQuery and bound fields."""
         if self.query.query_type != QueryType.INSTANCES_OF:
@@ -50,6 +81,7 @@ class WikidataSource:
         select_vars = ["?item"]
         where_clauses = [f"  ?item wdt:P31 wd:{target_qid} ."]
         need_label_service = False
+        var_map = self._build_field_var_map(fields)
 
         for attr_name, field in fields:
             source_key = field._source_key
@@ -64,7 +96,7 @@ class WikidataSource:
                 need_label_service = True
             else:
                 # Regular property
-                var_name = attr_name
+                var_name = var_map[attr_name]
                 select_vars.append(f"?{var_name}")
                 if value_type == PropertyValueType.ENTITY:
                     select_vars.append(f"?{var_name}Label")
@@ -125,6 +157,7 @@ class WikidataSource:
     def _parse_results(self, raw_data: dict, fields: list[tuple[str, Any]]) -> list[dict[str, str]]:
         """Parse SPARQL JSON results into list of dicts keyed by field attribute names."""
         bindings = raw_data.get("results", {}).get("bindings", [])
+        var_map = self._build_field_var_map(fields)
 
         # Deduplicate by item URI (take first occurrence)
         seen_items: dict[str, dict] = {}
@@ -153,9 +186,9 @@ class WikidataSource:
                         val = binding.get("itemDescription", {}).get("value", "")
                     elif value_type == PropertyValueType.ENTITY:
                         # Use the Label variant for entity-valued properties
-                        val = binding.get(f"{attr_name}Label", {}).get("value", "")
+                        val = binding.get(f"{var_map[attr_name]}Label", {}).get("value", "")
                     else:
-                        val = binding.get(attr_name, {}).get("value", "")
+                        val = binding.get(var_map[attr_name], {}).get("value", "")
 
                     row[attr_name] = val or ""
 
