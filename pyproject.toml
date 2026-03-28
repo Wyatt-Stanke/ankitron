@@ -25,7 +25,6 @@ all = [
 
 [project.scripts]
 ankitron = "ankitron.cli.main:main"
-ankisync = "ankisync.cli:main"      # deprecated alias
 
 [build-system]
 requires = ["setuptools>=68.0"]
