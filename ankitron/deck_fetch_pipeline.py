@@ -25,6 +25,9 @@ def _process_media_fields(
         make_img_tag,
     )
 
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import os
+
     # Identify media fields
     media_fields = [(name, fld) for name, fld in cls._all_fields if fld.media is not None]
 
@@ -41,37 +44,48 @@ def _process_media_fields(
             continue
 
         media_dir = cache_dir
+        target_format = fld.format if fld.format else MediaFormat.PNG
+
+        tasks: list[tuple[int, str, Any, Path, str]] = []
         for row_idx, row in enumerate(all_rows):
             url = row.get(attr_name, "")
-
             if not url or not isinstance(url, str):
                 continue
-
-            # Skip if not a URL
             if not url.startswith("http"):
                 continue
 
-            # Get PK for filename generation
             pk_val = row.get(f"_pk_{pk_field_attr}", row.get(pk_field_attr, ""))
+            ext = fld.format.value if fld.format else "png"
+            filename = generate_media_filename(cls.__name__, pk_val, attr_name, ext)
+            output_path = media_dir / filename
+            img_tag = make_img_tag(filename, width=fld.width, height=fld.height)
+            tasks.append((row_idx, url, pk_val, output_path, img_tag))
 
+        if not tasks:
+            continue
+
+        # Fast path: already cached
+        for row_idx, _, _, output_path, img_tag in tasks:
+            if output_path.exists():
+                all_rows[row_idx][attr_name] = img_tag
+
+        uncached = [t for t in tasks if not t[3].exists()]
+        if not uncached:
+            continue
+
+        log_info(f"  Processing {len(uncached)} {attr_name} media file(s) in parallel...")
+
+        def _process_one(task: tuple[int, str, Any, Path, str]) -> tuple[int, str | None]:
+            row_idx, url, pk_val, output_path, _img_tag = task
             try:
-                # Generate stable filename
-                ext = fld.format.value if fld.format else "png"
-                filename = generate_media_filename(cls.__name__, pk_val, attr_name, ext)
-                output_path = media_dir / filename
-
-                # Skip if already cached
-                if output_path.exists():
-                    # Generate img tag with the cached filename
-                    img_tag = make_img_tag(filename, width=fld.width, height=fld.height)
-                    row[attr_name] = img_tag
-                    continue
-
                 # Download to temporary location with proper suffix for format detection
                 import requests
 
                 resp = requests.head(
-                    url, timeout=10, allow_redirects=True, headers={"User-Agent": "ankitron/0.1.0"}
+                    url,
+                    timeout=10,
+                    allow_redirects=True,
+                    headers={"User-Agent": "ankitron/0.1.0"},
                 )
                 content_type = resp.headers.get("content-type", "").lower()
 
@@ -85,18 +99,13 @@ def _process_media_fields(
                 elif "webp" in content_type:
                     tmp_suffix = ".webp"
                 else:
-                    # Default based on URL
                     tmp_suffix = ".svg" if ".svg" in url.lower() else ".png"
 
                 with tempfile.NamedTemporaryFile(suffix=tmp_suffix, delete=False) as tmp:
                     tmp_path = Path(tmp.name)
 
                 try:
-                    log_info(f"  Downloading {attr_name} for {pk_val}...")
                     download_media(url, tmp_path, timeout=30)
-
-                    # Convert image to target format/size
-                    target_format = fld.format if fld.format else MediaFormat.PNG
                     convert_image(
                         input_path=tmp_path,
                         output_path=output_path,
@@ -104,19 +113,26 @@ def _process_media_fields(
                         width=fld.width,
                         height=fld.height,
                     )
-
-                    # Generate img tag
-                    img_tag = make_img_tag(filename, width=fld.width, height=fld.height)
-                    row[attr_name] = img_tag
-
+                    return (row_idx, None)
                 finally:
-                    # Clean up temp file
                     if tmp_path.exists():
                         tmp_path.unlink()
-
             except Exception as exc:
-                log_warn(f"  Failed to process {attr_name} for {pk_val}: {exc}")
-                # Leave field value as-is (URL) if processing fails
+                return (row_idx, f"  Failed to process {attr_name} for {pk_val}: {exc}")
+
+        max_workers = min(32, (os.cpu_count() or 4) * 4, len(uncached))
+        row_to_tag = {row_idx: img_tag for row_idx, _, _, _, img_tag in uncached}
+        future_to_task: dict[Any, tuple[int, str, Any, Path, str]] = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for task in uncached:
+                future_to_task[executor.submit(_process_one, task)] = task
+
+            for future in as_completed(future_to_task):
+                row_idx, err = future.result()
+                if err is not None:
+                    log_warn(err)
+                    continue
+                all_rows[row_idx][attr_name] = row_to_tag[row_idx]
 
 
 def _coerce_numeric(value: Any) -> Any:

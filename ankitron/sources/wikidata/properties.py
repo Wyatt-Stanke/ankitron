@@ -49,6 +49,19 @@ class _PropertyAccessor:
         P("999")        # Escape hatch (P prefix added)
     """
 
+    # Known properties — annotation-only stubs for IDE autocomplete
+    LABEL: WikidataProperty
+    DESCRIPTION: WikidataProperty
+    CAPITAL: WikidataProperty
+    FLAG_IMAGE: WikidataProperty
+    POPULATION: WikidataProperty
+    INCEPTION: WikidataProperty
+    HEAD_OF_STATE: WikidataProperty
+    AREA: WikidataProperty
+    MOTTO: WikidataProperty
+    ANTHEM: WikidataProperty
+    TIMEZONE: WikidataProperty
+
     def __getattr__(self, name: str) -> WikidataProperty:
         if name.startswith("_"):
             raise AttributeError(name)

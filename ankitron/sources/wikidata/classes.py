@@ -35,6 +35,14 @@ class _ClassAccessor:
         Q("12345")      # Escape hatch (Q prefix added)
     """
 
+    # Known classes — annotation-only stubs for IDE autocomplete
+    US_STATE: WikidataClass
+    COUNTRY: WikidataClass
+    CITY: WikidataClass
+    LANGUAGE: WikidataClass
+    CHEMICAL_ELEMENT: WikidataClass
+    PLANET: WikidataClass
+
     def __getattr__(self, name: str) -> WikidataClass:
         if name.startswith("_"):
             raise AttributeError(name)

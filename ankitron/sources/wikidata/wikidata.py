@@ -8,6 +8,7 @@ import requests
 
 if TYPE_CHECKING:
     from ankitron.cache import Cache
+    from ankitron.deck import Field as _Field
 
 from ankitron.enums import FieldRule, PKStrategy
 from ankitron.logging import (
@@ -35,7 +36,7 @@ class WikidataSource:
         self.query = query
         self._last_cache_info: dict | None = None
 
-    def Field(self, prop: WikidataProperty, **kwargs: Any) -> Any:
+    def Field(self, prop: WikidataProperty, **kwargs: Any) -> _Field:
         # Avoid circular import at module level
         from ankitron.deck import Field
 

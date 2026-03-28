@@ -3,10 +3,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from dataclasses import field as dc_field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from ankitron.provenance import ProvenanceConfig
 
 from rich import box
 from rich.table import Table
@@ -469,18 +470,25 @@ class Deck:
     Uses __init_subclass__ to introspect the class body at definition time.
     """
 
+    # User-configurable class variables (all optional)
+    deck_name: ClassVar[str]
+    tags: ClassVar[list[str | Tag]]
+    validators: ClassVar[list[Any]]
+    overrides: ClassVar[dict[str, dict[str, Any]]]
+    provenance: ClassVar[ProvenanceConfig]
+
     # These are set by __init_subclass__ on subclasses
-    _deck_fields: list[Field]
-    _deck_cards: list[type[Card]]
-    _deck_sources: list[Any]
-    _deck_name: str
-    _field_attrs: list[str]
-    _pk_field_attr: str
-    _visible_fields: list[tuple[str, Field]]
-    _derived_order: list[tuple[str, Field]]
-    _all_fields: list[tuple[str, Field]]
-    _deck_tags: list[str | Tag]
-    _deck_overrides: dict[str, dict[str, Any]]
+    _deck_fields: ClassVar[list[Field]]
+    _deck_cards: ClassVar[list[type[Card]]]
+    _deck_sources: ClassVar[list[Any]]
+    _deck_name: ClassVar[str]
+    _field_attrs: ClassVar[list[str]]
+    _pk_field_attr: ClassVar[str]
+    _visible_fields: ClassVar[list[tuple[str, Field]]]
+    _derived_order: ClassVar[list[tuple[str, Field]]]
+    _all_fields: ClassVar[list[tuple[str, Field]]]
+    _deck_tags: ClassVar[list[str | Tag]]
+    _deck_overrides: ClassVar[dict[str, dict[str, Any]]]
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
