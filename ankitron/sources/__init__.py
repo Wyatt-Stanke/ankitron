@@ -19,4 +19,12 @@ def __getattr__(name: str):
         from ankitron.sources.ai import AISource
 
         return AISource
+    if name == "AICardSource":
+        from ankitron.sources.ai_card_source import AICardSource
+
+        return AICardSource
+    if name == "TextSource":
+        from ankitron.sources.text_source import TextSource
+
+        return TextSource
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

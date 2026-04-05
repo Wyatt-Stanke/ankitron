@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
     from ankitron.provenance import ProvenanceConfig
 
 from rich import box
@@ -538,7 +539,7 @@ class Deck:
             log_info(f"  {derived_count} derived field{'s' if derived_count != 1 else ''}")
 
         # Resolve provenance config once
-        from ankitron.provenance import ProvenanceConfig, ProvenancePosition
+        from ankitron.provenance import ProvenancePosition
 
         prov_config: ProvenanceConfig | None = getattr(cls, "provenance", None)
         prov_enabled = (

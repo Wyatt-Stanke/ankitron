@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import contextlib
 import tempfile
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ankitron.enums import FieldRule, MediaType, MediaFormat, Severity
+if TYPE_CHECKING:
+    from pathlib import Path
+
+from ankitron.enums import FieldRule, MediaFormat, MediaType, Severity
 from ankitron.logging import log_info, log_success, log_warn
 from ankitron.transform import Transform, apply_transform_chain
 
@@ -16,17 +18,16 @@ def _process_media_fields(
     pk_field_attr: str,
 ) -> None:
     """Process media fields: download URLs, convert to target format, cache, and generate tags."""
+    import os
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     from pathlib import Path
 
     from ankitron.media.pipeline import (
-        download_media,
         convert_image,
+        download_media,
         generate_media_filename,
         make_img_tag,
     )
-
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    import os
 
     # Identify media fields
     media_fields = [(name, fld) for name, fld in cls._all_fields if fld.media is not None]
@@ -44,7 +45,7 @@ def _process_media_fields(
             continue
 
         media_dir = cache_dir
-        target_format = fld.format if fld.format else MediaFormat.PNG
+        target_format = fld.format or MediaFormat.PNG
 
         tasks: list[tuple[int, str, Any, Path, str]] = []
         for row_idx, row in enumerate(all_rows):
@@ -75,7 +76,13 @@ def _process_media_fields(
 
         log_info(f"  Processing {len(uncached)} {attr_name} media file(s) in parallel...")
 
-        def _process_one(task: tuple[int, str, Any, Path, str]) -> tuple[int, str | None]:
+        def _process_one(
+            task: tuple[int, str, Any, Path, str],
+            *,
+            _target_format: Any = target_format,
+            _fld: Any = fld,
+            _attr_name: str = attr_name,
+        ) -> tuple[int, str | None]:
             row_idx, url, pk_val, output_path, _img_tag = task
             try:
                 # Download to temporary location with proper suffix for format detection
@@ -109,16 +116,16 @@ def _process_media_fields(
                     convert_image(
                         input_path=tmp_path,
                         output_path=output_path,
-                        target_format=target_format,
-                        width=fld.width,
-                        height=fld.height,
+                        target_format=_target_format,
+                        width=_fld.width,
+                        height=_fld.height,
                     )
                     return (row_idx, None)
                 finally:
                     if tmp_path.exists():
                         tmp_path.unlink()
             except Exception as exc:
-                return (row_idx, f"  Failed to process {attr_name} for {pk_val}: {exc}")
+                return (row_idx, f"  Failed to process {_attr_name} for {pk_val}: {exc}")
 
         max_workers = min(32, (os.cpu_count() or 4) * 4, len(uncached))
         row_to_tag = {row_idx: img_tag for row_idx, _, _, _, img_tag in uncached}

@@ -54,7 +54,7 @@ def convert_image(
 ) -> Path:
     """Convert and optionally resize an image.
 
-    Supports SVG→PNG (via cairosvg) and raster→raster (via Pillow).
+    Supports SVG→PNG (via resvg-py) and raster→raster (via Pillow).
     """
     input_path = Path(input_path)
     output_path = Path(output_path)
@@ -73,27 +73,29 @@ def _convert_svg(
     width: int | None = None,
     height: int | None = None,
 ) -> Path:
-    """Convert SVG to a raster format using cairosvg."""
+    """Convert SVG to a raster format using resvg-py."""
     try:
-        import cairosvg
+        import resvg
     except ImportError as err:
         raise ImportError(
-            "SVG conversion requires cairosvg. Install with: pip install ankitron[media]"
+            "SVG conversion requires resvg-py. Install with: pip install ankitron[media]"
         ) from err
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    kwargs: dict[str, Any] = {"url": str(input_path)}
+    svg_data = input_path.read_bytes()
+
+    # Render SVG to PNG bytes via resvg
+    render_kwargs: dict[str, Any] = {}
     if width:
-        kwargs["output_width"] = width
+        render_kwargs["width"] = width
     if height:
-        kwargs["output_height"] = height
+        render_kwargs["height"] = height
+    png_data = resvg.svg_to_png(svg_data, **render_kwargs)
 
     if target_format == MediaFormat.PNG:
-        cairosvg.svg2png(write_to=str(output_path), **kwargs)
-    elif target_format == MediaFormat.JPEG:
-        # SVG → PNG → JPEG
-        png_data = cairosvg.svg2png(**kwargs)
+        output_path.write_bytes(png_data)
+    elif target_format in (MediaFormat.JPEG, MediaFormat.WEBP):
         _ensure_deps()
         import io
 
@@ -104,9 +106,12 @@ def _convert_svg(
             bg = Image.new("RGB", img.size, (255, 255, 255))
             bg.paste(img, mask=img.split()[3])
             img = bg
-        img.save(str(output_path), "JPEG", quality=90)
+        save_fmt = "JPEG" if target_format == MediaFormat.JPEG else "WEBP"
+        quality = 90 if target_format == MediaFormat.JPEG else 85
+        img.save(str(output_path), save_fmt, quality=quality)
     else:
-        cairosvg.svg2png(write_to=str(output_path), **kwargs)
+        # Fallback: save as PNG
+        output_path.write_bytes(png_data)
 
     return output_path
 

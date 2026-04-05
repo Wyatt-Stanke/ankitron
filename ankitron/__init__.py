@@ -3,6 +3,7 @@ ankitron — A declarative Python SDK for programmatically generating Anki flash
 """
 
 from ankitron.deck import Card, Deck, Field, Tag
+from ankitron.deck_family import DeckFamily
 from ankitron.enums import (
     FieldKind,
     FieldRule,
@@ -20,6 +21,7 @@ __all__ = [
     "Card",
     "ChartConfig",
     "Deck",
+    "DeckFamily",
     "Field",
     "FieldKind",
     "FieldRule",

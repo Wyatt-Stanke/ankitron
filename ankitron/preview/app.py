@@ -10,7 +10,6 @@ from typing import Any
 
 from ankitron.deck import _FIELD_REF_PATTERN
 
-
 _IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]+)(")', flags=re.IGNORECASE)
 
 

@@ -91,6 +91,36 @@ def _build_parser() -> argparse.ArgumentParser:
     build_p.add_argument(
         "--include-provenance", action="store_true", help="Include provenance in csv/json exports"
     )
+    build_p.add_argument("--force", action="store_true", help="Rebuild even if cached/fresh")
+    build_p.add_argument("--flat", action="store_true", help="All .apkg files in one directory")
+    build_p.add_argument("--merge", action="store_true", help="Merge all decks into a single .apkg")
+    build_p.add_argument(
+        "--merge-by-directory",
+        action="store_true",
+        help="One .apkg per directory",
+    )
+    build_p.add_argument(
+        "--params",
+        default=None,
+        help="DeckFamily variant filter (e.g. lesson=3)",
+    )
+    build_p.add_argument(
+        "--batch", action="store_true", help="Use Anthropic Batch API for AI fields"
+    )
+    build_p.add_argument(
+        "--wait", action="store_true", help="Block until batch completes (with --batch)"
+    )
+    build_p.add_argument(
+        "--submit-only",
+        action="store_true",
+        help="Submit batch and exit (with --batch)",
+    )
+    build_p.add_argument(
+        "--batch-timeout",
+        type=int,
+        default=86400,
+        help="Batch wait timeout in seconds (default: 86400)",
+    )
 
     # ── preview ──
     preview_p = subparsers.add_parser("preview", help="Preview deck in terminal or browser")
@@ -173,6 +203,33 @@ def _build_parser() -> argparse.ArgumentParser:
     cache_warm.add_argument("--maps", action="store_true")
     cache_warm.add_argument("--ai", action="store_true")
 
+    cache_promote = cache_sub.add_parser("promote", help="Promote AI cache across versions")
+    cache_promote.add_argument("--deck", required=True, help="Deck class name")
+    cache_promote.add_argument("--field", required=True, help="Field name")
+    cache_promote.add_argument("--from-version", type=int, required=True)
+    cache_promote.add_argument("--to-version", type=int, required=True)
+    cache_promote.add_argument("--exclude-tag", default=None, help="Exclude rows with this tag")
+
+    # ── batch ──
+    batch_p = subparsers.add_parser("batch", help="Manage AI batch processing")
+    batch_sub = batch_p.add_subparsers(dest="batch_command")
+
+    batch_submit = batch_sub.add_parser("submit", help="Submit batch for processing")
+    batch_submit.add_argument("file", help="Python file or directory")
+    batch_submit.add_argument("-d", "--deck", default=None)
+
+    batch_status = batch_sub.add_parser("status", help="Check batch status")
+    batch_status.add_argument("batch_id", help="Batch ID")
+
+    batch_sub.add_parser("list", help="List pending batches")
+
+    batch_collect = batch_sub.add_parser("collect", help="Collect batch results")
+    batch_collect.add_argument("batch_id", nargs="?", default=None, help="Batch ID")
+    batch_collect.add_argument("--all", action="store_true", help="Collect all completed batches")
+
+    batch_cancel = batch_sub.add_parser("cancel", help="Cancel a batch")
+    batch_cancel.add_argument("batch_id", help="Batch ID")
+
     # ── init ──
     init_p = subparsers.add_parser("init", help="Create a new deck file")
     init_p.add_argument("-o", "--output", default=None, help="Output file path")
@@ -232,13 +289,18 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _discover_decks(filepath: str, deck_filter: list[str] | None = None) -> list[Any]:
-    """Import a Python file and discover all Deck subclasses."""
+    """Import a Python file (or walk a directory) and discover all Deck/DeckFamily subclasses."""
     import importlib.util
     import os
 
     from ankitron.deck import Deck
 
     filepath = os.path.abspath(filepath)
+
+    # If a directory, recursively discover .py files
+    if os.path.isdir(filepath):
+        return _discover_decks_recursive(filepath, deck_filter)
+
     if not os.path.isfile(filepath):
         print(f"Error: file not found: {filepath}", file=sys.stderr)
         sys.exit(3)
@@ -266,10 +328,60 @@ def _discover_decks(filepath: str, deck_filter: list[str] | None = None) -> list
         ):
             decks.append(obj)
 
+    # Also discover DeckFamily subclasses and expand them
+    try:
+        from ankitron.deck_family import DeckFamily
+
+        for attr_name in dir(module):
+            obj = getattr(module, attr_name)
+            if (
+                isinstance(obj, type)
+                and issubclass(obj, DeckFamily)
+                and obj is not DeckFamily
+                and not attr_name.startswith("_")
+                and not getattr(obj, "_is_abstract", False)
+            ):
+                variants = obj.expand()
+                decks.extend(variants)
+    except ImportError:
+        pass
+
     if deck_filter:
         decks = [d for d in decks if d.__name__ in deck_filter or d._deck_name in deck_filter]
 
     return decks
+
+
+def _discover_decks_recursive(dirpath: str, deck_filter: list[str] | None = None) -> list[Any]:
+    """Walk a directory tree and discover all Deck/DeckFamily subclasses."""
+    import os
+
+    all_decks: list[Any] = []
+
+    for root, dirs, files in os.walk(dirpath):
+        # Skip hidden/private directories
+        dirs[:] = [d for d in dirs if not d.startswith(("_", "."))]
+
+        for filename in sorted(files):
+            if not filename.endswith(".py"):
+                continue
+            if filename.startswith(("_", ".")):
+                continue
+            if (
+                filename == "conftest.py"
+                or filename.startswith("test_")
+                or filename.endswith("_test.py")
+            ):
+                continue
+
+            filepath = os.path.join(root, filename)
+            try:
+                found = _discover_decks(filepath, deck_filter)
+                all_decks.extend(found)
+            except SystemExit:
+                continue
+
+    return all_decks
 
 
 def _cmd_build(args: argparse.Namespace) -> int:
@@ -432,7 +544,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:  # noqa: ARG001
     # Optional deps
     optional = [
         ("Pillow", "PIL", "media"),
-        ("cairosvg", "cairosvg", "media"),
+        ("resvg-py", "resvg", "media"),
         ("mwparserfromhell", "mwparserfromhell", "wikipedia"),
         ("anthropic", "anthropic", "ai"),
         ("matplotlib", "matplotlib", "maps/charts"),
@@ -734,7 +846,7 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
                         print(f"    overridden: True (original: {rec.original_value})")
                     if rec.ai_generated:
                         print(
-                            f"    ai_generated: True"
+                            "    ai_generated: True"
                             + (f" (model: {rec.ai_model})" if rec.ai_model else "")
                         )
                     if rec.flagged:
@@ -897,6 +1009,18 @@ def _cmd_cache(args: argparse.Namespace) -> int:
             instance = deck_cls()
             instance.fetch()
             print(f"Cache warmed for {deck_cls._deck_name} ({len(instance._data or [])} rows)")
+
+    elif args.cache_command == "promote":
+        from ankitron.ai.cache import AICache
+
+        ai_cache = AICache()
+        promoted = ai_cache.promote(
+            deck_class=args.deck,
+            field_name=args.field,
+            from_version=args.from_version,
+            to_version=args.to_version,
+        )
+        print(f"Promoted {promoted} cache entries from v{args.from_version} to v{args.to_version}")
 
     else:
         print("Usage: ankitron cache {status|clear|warm}", file=sys.stderr)
@@ -1111,6 +1235,50 @@ def _cmd_addon(args: argparse.Namespace) -> int:  # noqa: ARG001
     return 0
 
 
+def _cmd_batch(args: argparse.Namespace) -> int:
+    """Manage AI batch processing."""
+    if args.batch_command == "submit":
+        print("Batch submit: use `ankitron build --batch --submit-only` to submit.")
+        return 0
+
+    if args.batch_command == "status":
+        from ankitron.ai.batch import check_batch_status
+
+        result = check_batch_status(args.batch_id)
+        print(f"Batch: {result.batch_id}")
+        print(f"  Status: {result.status}")
+        print(f"  Completed: {result.completed}/{result.total_requests}")
+        if result.failed:
+            print(f"  Failed: {result.failed}")
+        return 0
+
+    if args.batch_command == "list":
+        print("Batch list: not yet implemented (requires persistent batch tracking).")
+        return 0
+
+    if args.batch_command == "collect":
+        if args.batch_id:
+            from ankitron.ai.batch import collect_batch_results
+            from ankitron.ai.cache import AICache
+
+            cache = AICache()
+            result = collect_batch_results(args.batch_id, [], cache)
+            print(f"Collected {result.completed} results from batch {args.batch_id}")
+        else:
+            print("Specify a batch_id or use --all")
+        return 0
+
+    if args.batch_command == "cancel":
+        from ankitron.ai.batch import cancel_batch
+
+        cancel_batch(args.batch_id)
+        print(f"Cancelled batch {args.batch_id}")
+        return 0
+
+    print("Usage: ankitron batch {submit|status|list|collect|cancel}", file=sys.stderr)
+    return 1
+
+
 _COMMAND_MAP = {
     "build": _cmd_build,
     "preview": _cmd_preview,
@@ -1119,6 +1287,7 @@ _COMMAND_MAP = {
     "inspect": _cmd_inspect,
     "review": _cmd_review,
     "cache": _cmd_cache,
+    "batch": _cmd_batch,
     "init": _cmd_init,
     "sources": _cmd_sources,
     "doctor": _cmd_doctor,
