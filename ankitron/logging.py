@@ -1,5 +1,4 @@
 from rich.console import Console
-from rich.panel import Panel
 from rich.progress import (
     BarColumn,
     Progress,
@@ -10,10 +9,16 @@ from rich.progress import (
 
 console = Console()
 _warning_count = 0
+_quiet = False
 
 
 def warning_count() -> int:
     return _warning_count
+
+
+def reset_warning_count() -> None:
+    global _warning_count  # noqa: PLW0603
+    _warning_count = 0
 
 
 # Consistent visual language
@@ -26,20 +31,28 @@ ICON_WARN = "[bold yellow]⚠[/bold yellow]"
 
 
 def section_header(title: str) -> None:
+    if _quiet:
+        return
     console.print()
     console.rule(f"[bold cyan]{title}[/bold cyan]")
 
 
 def log_info(message: str) -> None:
+    if _quiet:
+        return
     console.print(f"  {ICON_INFO} {message}")
 
 
 def log_success(message: str) -> None:
+    if _quiet:
+        return
     console.print(f"  {ICON_SUCCESS} {message}")
 
 
 def log_warn(message: str) -> None:
     _increment_warning_count()
+    if _quiet:
+        return
     console.print(f"  {ICON_WARN} {message}")
 
 
@@ -73,4 +86,6 @@ def make_progress() -> Progress:
 
 
 def print_error_panel(title: str, body: str) -> None:
+    from rich.panel import Panel
+
     console.print(Panel(body, title=f"[bold red]{title}[/bold red]", border_style="red"))

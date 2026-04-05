@@ -5,8 +5,6 @@ All FastAPI app construction lives in `ankitron.preview.app`.
 
 from __future__ import annotations
 
-import importlib.util
-import os
 from os import path
 from typing import Any
 
@@ -23,31 +21,6 @@ def _ensure_deps() -> None:
         ) from err
 
 
-def _load_deck_module(filepath: str) -> Any:
-    """Load/reload a deck module from file."""
-    filepath = os.path.abspath(filepath)
-    spec = importlib.util.spec_from_file_location("_preview_deck", filepath)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load {filepath}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _find_deck_classes(module: Any, deck_name: str | None = None) -> list[type]:
-    """Find all Deck subclasses in a module."""
-    from ankitron.deck import Deck
-
-    decks = []
-    for attr_name in dir(module):
-        obj = getattr(module, attr_name)
-        if isinstance(obj, type) and issubclass(obj, Deck) and obj is not Deck:
-            if deck_name and obj.__name__ != deck_name and obj._deck_name != deck_name:
-                continue
-            decks.append(obj)
-    return decks
-
-
 def create_app(filepath: str, deck_name: str | None = None) -> Any:
     """Create preview app backed by a file and hot-reload callback."""
     _ensure_deps()
@@ -61,8 +34,11 @@ def create_app(filepath: str, deck_name: str | None = None) -> Any:
     }
 
     def reload_state() -> None:
-        module = _load_deck_module(filepath)
-        decks = _find_deck_classes(module, deck_name)
+        from ankitron.cli.main import _load_deck_module
+
+        decks = _load_deck_module(filepath)
+        if deck_name:
+            decks = [d for d in decks if d.__name__ == deck_name or d._deck_name == deck_name]
         if not decks:
             raise RuntimeError("No Deck subclasses found")
         deck_cls = decks[0]
@@ -71,14 +47,14 @@ def create_app(filepath: str, deck_name: str | None = None) -> Any:
 
         previous = state["runtime"]
         state["runtime"] = {
-            "module": module,
+            "module": None,
             "deck": deck_cls,
             "instance": instance,
             "version": previous["version"] + 1,
         }
 
     reload_state()
-    return create_preview_app(_FRONTEND_HTML, state, reload_callback=reload_state)
+    return create_preview_app(_get_frontend_html(), state, reload_callback=reload_state)
 
 
 def create_app_from_instance(deck_instance: Any) -> Any:
@@ -92,7 +68,7 @@ def create_app_from_instance(deck_instance: Any) -> Any:
             "version": 1,
         }
     }
-    return create_preview_app(_FRONTEND_HTML, state, reload_callback=None)
+    return create_preview_app(_get_frontend_html(), state, reload_callback=None)
 
 
 def run_preview_server(
@@ -137,5 +113,13 @@ def run_preview_server(
             stop_watcher()
 
 
-with open(path.join(path.dirname(__file__), "index.html"), encoding="utf-8") as _frontend_file:
-    _FRONTEND_HTML = _frontend_file.read()
+def _get_frontend_html() -> str:
+    """Lazily load the frontend HTML template."""
+    global _FRONTEND_HTML  # noqa: PLW0603
+    if _FRONTEND_HTML is None:
+        with open(path.join(path.dirname(__file__), "index.html"), encoding="utf-8") as f:
+            _FRONTEND_HTML = f.read()
+    return _FRONTEND_HTML
+
+
+_FRONTEND_HTML: str | None = None

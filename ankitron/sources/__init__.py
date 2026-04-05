@@ -3,9 +3,13 @@ from ankitron.sources.link_strategy import LinkStrategy
 from ankitron.sources.wikidata.wikidata import WikidataSource
 
 __all__ = [
+    "AICardSource",
+    "AISource",
     "CSVSource",
     "LinkStrategy",
+    "TextSource",
     "WikidataSource",
+    "WikipediaSource",
 ]
 
 

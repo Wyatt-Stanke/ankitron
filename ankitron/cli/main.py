@@ -6,345 +6,65 @@ Usage: ankitron <command> [options] [arguments]
 
 from __future__ import annotations
 
-import argparse
 import os
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import argparse
 
 
-def _get_version() -> str:
-    """Read version from package metadata."""
-    try:
-        from importlib.metadata import version
+def _load_deck_module(filepath: str) -> list[Any]:
+    """Import a Python file and return all Deck/DeckFamily subclasses found.
 
-        return version("ankitron")
-    except Exception:
-        return "dev"
+    Raises ImportError or RuntimeError on failure (does not call sys.exit).
+    """
+    import importlib.util
 
+    from ankitron.deck import Deck
+    from ankitron.deck_family import DeckFamily
 
-def _build_parser() -> argparse.ArgumentParser:
-    """Build the top-level argument parser with all subcommands."""
-    parser = argparse.ArgumentParser(
-        prog="ankitron",
-        description="ankitron — A declarative Python SDK for generating Anki flashcard decks.",
-    )
+    if not os.path.isfile(filepath):
+        raise FileNotFoundError(f"file not found: {filepath}")
 
-    # Global options
-    parser.add_argument(
-        "--verbose",
-        "-v",
-        action="count",
-        default=0,
-        help="Increase verbosity (stackable: -vv, -vvv)",
-    )
-    parser.add_argument(
-        "--quiet", "-q", action="store_true", help="Suppress all output except errors"
-    )
-    parser.add_argument("--no-color", action="store_true", help="Disable rich formatting")
-    parser.add_argument(
-        "--config",
-        type=str,
-        default=None,
-        help="Config file path (default: ~/.config/ankitron/config.toml)",
-    )
-    parser.add_argument("--cache-dir", type=str, default=None, help="Override cache directory")
-    parser.add_argument("--version", action="version", version=f"ankitron {_get_version()}")
+    spec = importlib.util.spec_from_file_location("_deck_module", filepath)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot import {filepath}")
 
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
 
-    # ── build ──
-    build_p = subparsers.add_parser("build", help="Build .apkg deck files")
-    build_p.add_argument("file", help="Python file containing Deck subclass(es)")
-    build_p.add_argument("-o", "--output-dir", default=".", help="Output directory (default: cwd)")
-    build_p.add_argument(
-        "-f",
-        "--output-file",
-        default=None,
-        help="Explicit output filename (single-deck files only)",
-    )
-    build_p.add_argument(
-        "-d", "--deck", action="append", default=None, help="Build only named deck(s), repeatable"
-    )
-    build_p.add_argument("--refresh", action="store_true", help="Bypass all caches")
-    build_p.add_argument(
-        "--refresh-source",
-        action="append",
-        default=None,
-        help="Bypass cache for one source (repeatable)",
-    )
-    build_p.add_argument(
-        "--refresh-media", action="store_true", help="Re-download/convert all media"
-    )
-    build_p.add_argument("--refresh-maps", action="store_true", help="Re-generate all maps")
-    build_p.add_argument("--refresh-ai", action="store_true", help="Re-run all AI prompts")
-    build_p.add_argument("--dry-run", action="store_true", help="Show plan without executing")
-    build_p.add_argument("--skip-validation", action="store_true", help="Skip all validators")
-    build_p.add_argument(
-        "--fail-on-warn", action="store_true", help="Treat warnings as errors (exit code 2)"
-    )
-    build_p.add_argument(
-        "--format",
-        default="apkg",
-        choices=["apkg", "csv", "json", "markdown"],
-        help="Output format (default: apkg)",
-    )
-    build_p.add_argument(
-        "--include-provenance", action="store_true", help="Include provenance in csv/json exports"
-    )
-    build_p.add_argument("--force", action="store_true", help="Rebuild even if cached/fresh")
-    build_p.add_argument("--flat", action="store_true", help="All .apkg files in one directory")
-    build_p.add_argument("--merge", action="store_true", help="Merge all decks into a single .apkg")
-    build_p.add_argument(
-        "--merge-by-directory",
-        action="store_true",
-        help="One .apkg per directory",
-    )
-    build_p.add_argument(
-        "--params",
-        default=None,
-        help="DeckFamily variant filter (e.g. lesson=3)",
-    )
-    build_p.add_argument(
-        "--batch", action="store_true", help="Use Anthropic Batch API for AI fields"
-    )
-    build_p.add_argument(
-        "--wait", action="store_true", help="Block until batch completes (with --batch)"
-    )
-    build_p.add_argument(
-        "--submit-only",
-        action="store_true",
-        help="Submit batch and exit (with --batch)",
-    )
-    build_p.add_argument(
-        "--batch-timeout",
-        type=int,
-        default=86400,
-        help="Batch wait timeout in seconds (default: 86400)",
-    )
+    decks: list[Any] = []
+    for attr_name in dir(module):
+        if attr_name.startswith("_"):
+            continue
+        obj = getattr(module, attr_name)
+        if not isinstance(obj, type):
+            continue
+        if (
+            issubclass(obj, DeckFamily)
+            and obj is not DeckFamily
+            and not getattr(obj, "_is_abstract", False)
+        ):
+            decks.extend(obj.expand())
+        elif issubclass(obj, Deck) and obj is not Deck:
+            decks.append(obj)
 
-    # ── preview ──
-    preview_p = subparsers.add_parser("preview", help="Preview deck in terminal or browser")
-    preview_p.add_argument("file", help="Python file containing Deck subclass(es)")
-    preview_p.add_argument("-d", "--deck", default=None, help="Preview specific deck")
-    preview_p.add_argument("--live", action="store_true", help="Launch live browser preview")
-    preview_p.add_argument("--port", type=int, default=8742, help="Preview server port")
-    preview_p.add_argument("--host", default="127.0.0.1", help="Preview server host")
-    preview_p.add_argument("--rows", type=int, default=10, help="Number of rows to show")
-    preview_p.add_argument("--row", default=None, help="Show specific row by PK")
-    preview_p.add_argument("--card-type", default=None, help="Filter by card type")
-    preview_p.add_argument("--refresh", action="store_true")
-
-    # ── check ──
-    check_p = subparsers.add_parser("check", help="Validate deck definition")
-    check_p.add_argument("file", help="Python file containing Deck subclass(es)")
-    check_p.add_argument("-d", "--deck", default=None)
-    check_p.add_argument(
-        "--with-fetch", action="store_true", help="Also fetch data and run validators"
-    )
-    check_p.add_argument("--strict", action="store_true", help="Treat warnings as errors")
-
-    # ── diff ──
-    diff_p = subparsers.add_parser("diff", help="Compare data against existing .apkg")
-    diff_p.add_argument("file", help="Python file containing Deck subclass(es)")
-    diff_p.add_argument("apkg", help="Existing .apkg file to compare against")
-    diff_p.add_argument("-d", "--deck", default=None)
-    diff_p.add_argument("--refresh", action="store_true")
-    diff_p.add_argument("--format", default="table", choices=["table", "json", "csv"])
-    diff_p.add_argument("--field", action="append", default=None, help="Only diff specified fields")
-    diff_p.add_argument("--only-changed", action="store_true")
-    diff_p.add_argument("--only-added", action="store_true")
-    diff_p.add_argument("--only-removed", action="store_true")
-
-    # ── inspect ──
-    inspect_p = subparsers.add_parser("inspect", help="Inspect a specific row")
-    inspect_p.add_argument("file", help="Python file containing Deck subclass(es)")
-    inspect_p.add_argument("-d", "--deck", default=None)
-    inspect_p.add_argument("--pk", required=True, help="Primary key of row to inspect")
-    inspect_p.add_argument("--field", default=None, help="Inspect specific field")
-    inspect_p.add_argument("--render", action="store_true", help="Render cards for this row")
-    inspect_p.add_argument("--json", action="store_true", help="Output as JSON")
-
-    # ── review ──
-    review_p = subparsers.add_parser("review", help="Interactive review of flagged/AI content")
-    review_p.add_argument("file", help="Python file containing Deck subclass(es)")
-    review_p.add_argument("-d", "--deck", default=None)
-    review_p.add_argument("--flags", action="store_true", help="Review flagged items")
-    review_p.add_argument("--ai", action="store_true", help="Review AI-generated content")
-    review_p.add_argument("--all", action="store_true", help="Review everything")
-    review_p.add_argument("--field", default=None)
-    review_p.add_argument("--tag", default=None)
-    review_p.add_argument(
-        "--export-overrides", default=None, help="Export approved overrides to file"
-    )
-
-    # ── cache ──
-    cache_p = subparsers.add_parser("cache", help="Cache management")
-    cache_sub = cache_p.add_subparsers(dest="cache_command")
-
-    cache_status = cache_sub.add_parser("status", help="Show cache status")
-    cache_status.add_argument("-d", "--deck", default=None)
-    cache_status.add_argument("-v", "--verbose", action="store_true")
-
-    cache_clear = cache_sub.add_parser("clear", help="Clear cache entries")
-    cache_clear.add_argument("--all", action="store_true")
-    cache_clear.add_argument("--responses", action="store_true")
-    cache_clear.add_argument("--media", action="store_true")
-    cache_clear.add_argument("--maps", action="store_true")
-    cache_clear.add_argument("--ai", action="store_true")
-    cache_clear.add_argument("--stale", action="store_true")
-    cache_clear.add_argument("--older-than", default=None)
-    cache_clear.add_argument("-d", "--deck", default=None)
-    cache_clear.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
-
-    cache_warm = cache_sub.add_parser("warm", help="Pre-populate cache")
-    cache_warm.add_argument("file", help="Python file")
-    cache_warm.add_argument("-d", "--deck", default=None)
-    cache_warm.add_argument("--media", action="store_true")
-    cache_warm.add_argument("--maps", action="store_true")
-    cache_warm.add_argument("--ai", action="store_true")
-
-    cache_promote = cache_sub.add_parser("promote", help="Promote AI cache across versions")
-    cache_promote.add_argument("--deck", required=True, help="Deck class name")
-    cache_promote.add_argument("--field", required=True, help="Field name")
-    cache_promote.add_argument("--from-version", type=int, required=True)
-    cache_promote.add_argument("--to-version", type=int, required=True)
-    cache_promote.add_argument("--exclude-tag", default=None, help="Exclude rows with this tag")
-
-    # ── batch ──
-    batch_p = subparsers.add_parser("batch", help="Manage AI batch processing")
-    batch_sub = batch_p.add_subparsers(dest="batch_command")
-
-    batch_submit = batch_sub.add_parser("submit", help="Submit batch for processing")
-    batch_submit.add_argument("file", help="Python file or directory")
-    batch_submit.add_argument("-d", "--deck", default=None)
-
-    batch_status = batch_sub.add_parser("status", help="Check batch status")
-    batch_status.add_argument("batch_id", help="Batch ID")
-
-    batch_sub.add_parser("list", help="List pending batches")
-
-    batch_collect = batch_sub.add_parser("collect", help="Collect batch results")
-    batch_collect.add_argument("batch_id", nargs="?", default=None, help="Batch ID")
-    batch_collect.add_argument("--all", action="store_true", help="Collect all completed batches")
-
-    batch_cancel = batch_sub.add_parser("cancel", help="Cancel a batch")
-    batch_cancel.add_argument("batch_id", help="Batch ID")
-
-    # ── init ──
-    init_p = subparsers.add_parser("init", help="Create a new deck file")
-    init_p.add_argument("-o", "--output", default=None, help="Output file path")
-    init_p.add_argument(
-        "--template", default=None, choices=["wikidata", "csv", "wikipedia"], help="Template type"
-    )
-    init_p.add_argument("--non-interactive", action="store_true")
-
-    # ── sources ──
-    sources_p = subparsers.add_parser("sources", help="Explore data sources")
-    sources_sub = sources_p.add_subparsers(dest="sources_command")
-
-    wd_p = sources_sub.add_parser("wikidata", help="Wikidata exploration")
-    wd_sub = wd_p.add_subparsers(dest="wikidata_command")
-
-    wd_search = wd_sub.add_parser("search", help="Search Wikidata classes/properties")
-    wd_search.add_argument("query", help="Search term")
-    wd_search.add_argument("--type", default="class", choices=["class", "property"])
-    wd_search.add_argument("--limit", type=int, default=10)
-
-    wd_describe = wd_sub.add_parser("describe", help="Describe a QID")
-    wd_describe.add_argument("qid", help="Wikidata QID (e.g., Q30)")
-    wd_describe.add_argument("--sample", type=int, default=5)
-
-    wp_p = sources_sub.add_parser("wikipedia", help="Wikipedia exploration")
-    wp_sub = wp_p.add_subparsers(dest="wikipedia_command")
-
-    wp_infobox = wp_sub.add_parser("infobox", help="Inspect infobox params")
-    wp_infobox.add_argument("title", help="Wikipedia article title")
-    wp_infobox.add_argument("--language", default="en")
-
-    # ── doctor ──
-    subparsers.add_parser("doctor", help="Diagnose installation and dependencies")
-
-    # ── addon ──
-    subparsers.add_parser("addon", help="Anki add-on management (stub)")
-
-    # ── sync ──
-    sync_p = subparsers.add_parser("sync", help="Sync .apkg files to AnkiWeb")
-    sync_p.add_argument("files", nargs="+", help=".apkg files to sync")
-    sync_p.add_argument("-u", "--username", default=None, help="AnkiWeb username")
-    sync_p.add_argument("-p", "--password", default=None, help="AnkiWeb password")
-    sync_p.add_argument("--dry-run", action="store_true")
-    sync_p.add_argument(
-        "--allow-updates", action="store_true", help="Update existing notes (default: add-only)"
-    )
-    sync_p.add_argument(
-        "--collection",
-        default=None,
-        help="Collection path (~/.local/share/Anki2/User 1/collection.anki2)",
-    )
-    sync_p.add_argument("--full-upload", action="store_true")
-    sync_p.add_argument("--full-download", action="store_true")
-    sync_p.add_argument("--full-download-import-sync", action="store_true")
-
-    return parser
+    return decks
 
 
 def _discover_decks(filepath: str, deck_filter: list[str] | None = None) -> list[Any]:
     """Import a Python file (or walk a directory) and discover all Deck/DeckFamily subclasses."""
-    import importlib.util
-    import os
-
-    from ankitron.deck import Deck
-
     filepath = os.path.abspath(filepath)
 
-    # If a directory, recursively discover .py files
     if os.path.isdir(filepath):
         return _discover_decks_recursive(filepath, deck_filter)
 
-    if not os.path.isfile(filepath):
-        print(f"Error: file not found: {filepath}", file=sys.stderr)
-        sys.exit(3)
-
-    spec = importlib.util.spec_from_file_location("_deck_module", filepath)
-    if spec is None or spec.loader is None:
-        print(f"Error: cannot import {filepath}", file=sys.stderr)
-        sys.exit(3)
-
-    module = importlib.util.module_from_spec(spec)
     try:
-        spec.loader.exec_module(module)
+        decks = _load_deck_module(filepath)
     except Exception as exc:
-        print(f"Error importing {filepath}: {exc}", file=sys.stderr)
+        print(f"Error: {exc}", file=sys.stderr)
         sys.exit(3)
-
-    decks = []
-    for attr_name in dir(module):
-        obj = getattr(module, attr_name)
-        if (
-            isinstance(obj, type)
-            and issubclass(obj, Deck)
-            and obj is not Deck
-            and not attr_name.startswith("_")
-        ):
-            decks.append(obj)
-
-    # Also discover DeckFamily subclasses and expand them
-    try:
-        from ankitron.deck_family import DeckFamily
-
-        for attr_name in dir(module):
-            obj = getattr(module, attr_name)
-            if (
-                isinstance(obj, type)
-                and issubclass(obj, DeckFamily)
-                and obj is not DeckFamily
-                and not attr_name.startswith("_")
-                and not getattr(obj, "_is_abstract", False)
-            ):
-                variants = obj.expand()
-                decks.extend(variants)
-    except ImportError:
-        pass
 
     if deck_filter:
         decks = [d for d in decks if d.__name__ in deck_filter or d._deck_name in deck_filter]
@@ -354,8 +74,6 @@ def _discover_decks(filepath: str, deck_filter: list[str] | None = None) -> list
 
 def _discover_decks_recursive(dirpath: str, deck_filter: list[str] | None = None) -> list[Any]:
     """Walk a directory tree and discover all Deck/DeckFamily subclasses."""
-    import os
-
     all_decks: list[Any] = []
 
     for root, dirs, files in os.walk(dirpath):
@@ -376,9 +94,13 @@ def _discover_decks_recursive(dirpath: str, deck_filter: list[str] | None = None
 
             filepath = os.path.join(root, filename)
             try:
-                found = _discover_decks(filepath, deck_filter)
+                found = _load_deck_module(filepath)
+                if deck_filter:
+                    found = [
+                        d for d in found if d.__name__ in deck_filter or d._deck_name in deck_filter
+                    ]
                 all_decks.extend(found)
-            except SystemExit:
+            except Exception:  # noqa: S112
                 continue
 
     return all_decks
@@ -386,8 +108,6 @@ def _discover_decks_recursive(dirpath: str, deck_filter: list[str] | None = None
 
 def _cmd_build(args: argparse.Namespace) -> int:
     """Execute the build command."""
-    import os
-
     from ankitron.logging import warning_count
 
     decks = _discover_decks(args.file, args.deck)
@@ -395,8 +115,27 @@ def _cmd_build(args: argparse.Namespace) -> int:
         print("Error: no Deck subclasses found.", file=sys.stderr)
         return 4
 
+    # Filter DeckFamily variants by --params (e.g. "lesson=3")
+    if args.params:
+        kv_pairs = dict(kv.split("=", 1) for kv in args.params.split(","))
+        filtered = []
+        for d in decks:
+            family_params = getattr(d, "_family_params", None)
+            if family_params is None:
+                filtered.append(d)  # not a variant, keep
+            elif all(str(family_params.get(k)) == v for k, v in kv_pairs.items()):
+                filtered.append(d)
+        decks = filtered
+        if not decks:
+            print("Error: --params filter matched no deck variants.", file=sys.stderr)
+            return 4
+
     if args.output_file and len(decks) > 1:
         print("Error: --output-file can only be used with single-deck files.", file=sys.stderr)
+        return 1
+
+    if args.merge and args.merge_by_directory:
+        print("Error: --merge and --merge-by-directory are mutually exclusive.", file=sys.stderr)
         return 1
 
     if args.dry_run:
@@ -407,23 +146,35 @@ def _cmd_build(args: argparse.Namespace) -> int:
             print(f"  Sources: {len(deck_cls._deck_sources)}")
         return 0
 
+    # Determine effective refresh flag: --force or --refresh or any granular --refresh-*
+    do_refresh = (
+        args.refresh
+        or args.force
+        or args.refresh_media
+        or args.refresh_maps
+        or args.refresh_ai
+        or bool(args.refresh_source)
+    )
+
+    instances: list[Any] = []
     for deck_cls in decks:
         instance = deck_cls()
         instance.fetch(
-            refresh=args.refresh,
+            refresh=do_refresh,
             skip_validation=args.skip_validation,
         )
+        instances.append(instance)
 
-        if args.format == "apkg":
-            if args.output_file:
-                output_path = os.path.join(args.output_dir, args.output_file)
-            else:
-                safe_name = deck_cls.__name__.lower()
-                output_path = os.path.join(args.output_dir, f"{safe_name}.apkg")
-            instance.export(output_path)
-        elif args.format in ("csv", "json", "markdown"):
-            # Export to alternate formats
+    if args.format != "apkg":
+        for instance in instances:
             _export_alt_format(instance, args)
+    elif args.merge:
+        # Merge all decks into a single .apkg
+        _export_merged(instances, args)
+    else:
+        for instance in instances:
+            output_path = _build_output_path(instance, args)
+            instance.export(output_path)
 
     if args.fail_on_warn and warning_count() > 0:
         return 2
@@ -431,11 +182,89 @@ def _cmd_build(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_output_path(instance: Any, args: argparse.Namespace) -> str:
+    """Compute the output .apkg path respecting --flat, --output-file, --output-dir."""
+    cls = instance.__class__
+
+    if args.output_file:
+        return os.path.join(args.output_dir, args.output_file)
+
+    safe_name = cls.__name__.lower()
+    ext = args.format if args.format != "apkg" else "apkg"
+
+    if args.flat or not hasattr(cls, "_family_qualname"):
+        # Flat: everything in output_dir directly
+        return os.path.join(args.output_dir, f"{safe_name}.{ext}")
+
+    # Preserve hierarchy from deck_name (e.g. "Spanish Vocabulary::Lesson 1" → subdir)
+    deck_name = getattr(cls, "_deck_name", safe_name)
+    parts = [p.strip().replace(" ", "_").lower() for p in deck_name.split("::")]
+    if len(parts) > 1:
+        subdir = os.path.join(args.output_dir, *parts[:-1])
+        os.makedirs(subdir, exist_ok=True)
+        return os.path.join(subdir, f"{safe_name}.{ext}")
+
+    return os.path.join(args.output_dir, f"{safe_name}.{ext}")
+
+
+def _export_merged(instances: list[Any], args: argparse.Namespace) -> None:
+    """Merge multiple deck instances into a single .apkg file."""
+    import genanki
+
+    from ankitron.export import build_genanki_model
+    from ankitron.identity import generate_deck_id
+    from ankitron.logging import log_success
+
+    package = genanki.Package([])
+    media_files: list[str] = []
+
+    for instance in instances:
+        cls = instance.__class__
+        model = build_genanki_model(cls)
+        deck_id = generate_deck_id(cls.__qualname__)
+        gk_deck = genanki.Deck(deck_id=deck_id, name=cls._deck_name)
+
+        visible_attrs = [name for name, f in cls._all_fields if not f.internal]
+        pk_attr = cls._pk_field_attr
+
+        from ankitron.export import resolve_tags
+        from ankitron.identity import generate_note_id
+
+        for row in instance._data or []:
+            import html
+
+            pk_val = row.get(f"_pk_{pk_attr}", row.get(pk_attr, ""))
+            field_values = [html.escape(str(row.get(attr, ""))) for attr in visible_attrs]
+            note_id = generate_note_id(cls.__qualname__, pk_val)
+            tags = resolve_tags(cls._deck_tags, row) if cls._deck_tags else []
+            note = genanki.Note(model=model, fields=field_values, guid=note_id, tags=tags)
+            gk_deck.add_note(note)
+
+        package.decks.append(gk_deck)
+
+        # Collect media files from the media cache directory
+        from ankitron.cache import CACHE_DIR
+
+        media_cache_dir = CACHE_DIR / "media"
+        if media_cache_dir.is_dir():
+            for f in os.listdir(media_cache_dir):
+                fpath = media_cache_dir / f
+                if fpath.is_file():
+                    media_files.append(str(fpath))
+
+    if media_files:
+        package.media_files = list(set(media_files))
+
+    output_name = args.output_file or "merged.apkg"
+    output_path = os.path.join(args.output_dir, output_name)
+    package.write_to_file(output_path)
+    log_success(f"Merged {len(instances)} deck(s) → {output_path}")
+
+
 def _export_alt_format(instance: Any, args: argparse.Namespace) -> None:
     """Export deck data in CSV, JSON, or Markdown format."""
     import csv as csv_mod
     import json
-    import os
 
     cls = instance.__class__
     data = instance._data or []
@@ -456,16 +285,24 @@ def _export_alt_format(instance: Any, args: argparse.Namespace) -> None:
 
     elif args.format == "json":
         rows = [{k: row.get(k, "") for k in visible} for row in data]
+        if args.include_provenance and hasattr(instance, "_provenance"):
+            from dataclasses import asdict, is_dataclass
+
+            for i, row_prov in enumerate(instance._provenance):
+                if i < len(rows):
+                    prov_out = {}
+                    for field_name, rec in (row_prov or {}).items():
+                        prov_out[field_name] = asdict(rec) if is_dataclass(rec) else str(rec)
+                    rows[i]["_provenance"] = prov_out
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(rows, f, indent=2, default=str)
 
     elif args.format == "markdown":
         with open(output_path, "w", encoding="utf-8") as f:
-            # Header
             f.write("| " + " | ".join(visible) + " |\n")
             f.write("| " + " | ".join(["---"] * len(visible)) + " |\n")
             for row in data:
-                vals = [row.get(k, "") for k in visible]
+                vals = [str(row.get(k, "")).replace("|", "\\|") for k in visible]
                 f.write("| " + " | ".join(vals) + " |\n")
 
     print(f"Exported to {output_path}")
@@ -578,7 +415,6 @@ def _cmd_sync(args: argparse.Namespace) -> int:
         return 1
 
     import getpass
-    import os
 
     username = args.username or os.environ.get("ANKIWEB_USERNAME")
     password = args.password or os.environ.get("ANKIWEB_PASSWORD")
@@ -643,9 +479,23 @@ def _cmd_diff(args: argparse.Namespace) -> int:
 
         # Extract notes from existing .apkg
         existing_notes: dict[str, dict[str, str]] = {}
+        tmp_path = None
         try:
             with zipfile.ZipFile(args.apkg, "r") as zf:
-                with zf.open("collection.anki2") as db_file:
+                # Anki 2.1.50+ may use collection.anki21b instead
+                db_name = "collection.anki2"
+                if db_name not in zf.namelist():
+                    candidates = [n for n in zf.namelist() if "collection" in n]
+                    if candidates:
+                        db_name = candidates[0]
+                    else:
+                        print(
+                            "Error: .apkg does not contain a collection database.",
+                            file=sys.stderr,
+                        )
+                        return 1
+
+                with zf.open(db_name) as db_file:
                     import tempfile
 
                     with tempfile.NamedTemporaryFile(suffix=".anki2", delete=False) as tmp:
@@ -653,21 +503,28 @@ def _cmd_diff(args: argparse.Namespace) -> int:
                         tmp_path = tmp.name
 
                 conn = sqlite3.connect(tmp_path)
-                cursor = conn.execute("SELECT flds FROM notes")
-                visible = [n for n, f in deck_cls._all_fields if not f.internal]
-                for row in cursor:
-                    fields = row[0].split("\x1f")
-                    note = {}
-                    for i, name in enumerate(visible):
-                        note[name] = fields[i] if i < len(fields) else ""
-                    pk = note.get(deck_cls._pk_field_attr, "")
-                    if pk:
-                        existing_notes[pk] = note
-                conn.close()
-                os.unlink(tmp_path)
+                try:
+                    cursor = conn.execute("SELECT flds FROM notes")
+                    visible = [n for n, f in deck_cls._all_fields if not f.internal]
+                    for row in cursor:
+                        fields = row[0].split("\x1f")
+                        note = {}
+                        for i, name in enumerate(visible):
+                            note[name] = fields[i] if i < len(fields) else ""
+                        pk = note.get(deck_cls._pk_field_attr, "")
+                        if pk:
+                            existing_notes[pk] = note
+                finally:
+                    conn.close()
+        except KeyError as exc:
+            print(f"Error: incompatible .apkg format: {exc}", file=sys.stderr)
+            return 1
         except Exception as exc:
             print(f"Error reading .apkg: {exc}", file=sys.stderr)
             return 1
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
         # Build diff
         pk_attr = deck_cls._pk_field_attr
@@ -863,7 +720,7 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
 
         if args.render:
             for card_cls in deck_cls._deck_cards:
-                from ankitron.preview.server import _render_card
+                from ankitron.preview.app import _render_card
 
                 rendered = _render_card(card_cls, target_row)
                 print(f"\n── {rendered['name']} ──")
@@ -889,25 +746,51 @@ def _cmd_review(args: argparse.Namespace) -> int:
             print("No data to review.")
             return 0
 
-        # Filter rows based on flags
         visible = [(n, f) for n, f in deck_cls._all_fields if not f.internal]
         if args.field:
             visible = [(n, f) for n, f in visible if n == args.field]
 
         pk_attr = deck_cls._pk_field_attr
+        prov_rows = getattr(instance, "_provenance", None) or []
         overrides: dict[str, dict[str, str]] = {}
 
+        # Filter rows by --flags / --ai / --tag / --all
+        review_indices: list[int] = []
         for i, row in enumerate(data):
+            if args.all or (not args.flags and not args.ai and not args.tag):
+                review_indices.append(i)
+                continue
+
+            row_prov = prov_rows[i] if i < len(prov_rows) else {}
+            if (
+                args.flags
+                and any(getattr(rec, "flagged", False) for rec in (row_prov or {}).values())
+            ) or (
+                args.ai
+                and any(getattr(rec, "ai_generated", False) for rec in (row_prov or {}).values())
+            ):
+                review_indices.append(i)
+            elif args.tag:
+                tags = row.get("_tags", "")
+                if args.tag in str(tags):
+                    review_indices.append(i)
+
+        if not review_indices:
+            print("No rows match the review filter.")
+            return 0
+
+        print(f"Reviewing {len(review_indices)} of {len(data)} rows")
+
+        for idx_pos, i in enumerate(review_indices):
+            row = data[i]
             pk = row.get(f"_pk_{pk_attr}", row.get(pk_attr, "?"))
-            print(f"\n── Row {i + 1}/{len(data)}: {pk} ──")
+            print(f"\n── Row {idx_pos + 1}/{len(review_indices)}: {pk} ──")
             for name, _fld in visible:
                 print(f"  {name}: {row.get(name, '')}")
 
             while True:
                 action = input("[s]kip / [e]dit / [d]one / [q]uit > ").strip().lower()
-                if action == "s":
-                    break
-                if action == "d":
+                if action in ("s", "d"):
                     break
                 if action == "q":
                     if args.export_overrides and overrides:
@@ -941,12 +824,12 @@ def _cmd_review(args: argparse.Namespace) -> int:
 
 def _cmd_cache(args: argparse.Namespace) -> int:
     """Cache management command."""
-    from ankitron.cache import Cache
+    from ankitron.cache import CACHE_DIR
 
-    cache = Cache()
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     if args.cache_command == "status":
-        cache_dir = cache.cache_dir
+        cache_dir = str(CACHE_DIR)
         if not os.path.isdir(cache_dir):
             print("Cache directory does not exist yet.")
             return 0
@@ -966,7 +849,7 @@ def _cmd_cache(args: argparse.Namespace) -> int:
     elif args.cache_command == "clear":
         import shutil
 
-        cache_dir = cache.cache_dir
+        cache_dir = str(CACHE_DIR)
         if not os.path.isdir(cache_dir):
             print("Nothing to clear.")
             return 0
@@ -1259,11 +1142,11 @@ def _cmd_batch(args: argparse.Namespace) -> int:
     if args.batch_command == "collect":
         if args.batch_id:
             from ankitron.ai.batch import collect_batch_results
-            from ankitron.ai.cache import AICache
 
-            cache = AICache()
-            result = collect_batch_results(args.batch_id, [], cache)
+            result = collect_batch_results(args.batch_id)
             print(f"Collected {result.completed} results from batch {args.batch_id}")
+            if result.failed:
+                print(f"  Failed: {result.failed}")
         else:
             print("Specify a batch_id or use --all")
         return 0
@@ -1298,7 +1181,9 @@ _COMMAND_MAP = {
 
 def main(argv: list[str] | None = None) -> None:
     """Main CLI entry point."""
-    parser = _build_parser()
+    from ankitron.cli.parser import build_parser
+
+    parser = build_parser()
     args = parser.parse_args(argv)
 
     if args.command is None:
@@ -1309,11 +1194,14 @@ def main(argv: list[str] | None = None) -> None:
     if args.quiet:
         import ankitron.logging as log_mod
 
-        log_mod._quiet = True  # type: ignore[attr-defined]
+        log_mod._quiet = True
     if args.no_color:
-        import os
-
         os.environ["NO_COLOR"] = "1"
+
+    # Reset warning counter for each invocation
+    from ankitron.logging import reset_warning_count
+
+    reset_warning_count()
 
     handler = _COMMAND_MAP.get(args.command)
     if handler:

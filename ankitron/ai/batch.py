@@ -110,11 +110,15 @@ def check_batch_status(batch_id: str) -> BatchResult:
 
 def collect_batch_results(
     batch_id: str,
-    requests: list[BatchRequest],
-    cache: AICache,
+    requests: list[BatchRequest] | None = None,
+    cache: AICache | None = None,
     model: str = "claude-sonnet-4-20250514",
 ) -> BatchResult:
-    """Collect completed batch results and store in the AI cache."""
+    """Collect completed batch results and optionally store in the AI cache.
+
+    If *requests* and *cache* are provided, results are cached using the
+    request metadata.  Otherwise, results are returned without caching.
+    """
     try:
         import anthropic
     except ImportError as err:
@@ -124,18 +128,16 @@ def collect_batch_results(
 
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
 
-    # Build lookup from custom_id → BatchRequest
-    request_map = {req.custom_id: req for req in requests}
+    # Build lookup from custom_id → BatchRequest (if available)
+    request_map = {req.custom_id: req for req in requests} if requests else {}
 
     results_iter = client.messages.batches.results(batch_id)
     collected = 0
     failed = 0
+    result_list: list[dict[str, Any]] = []
 
     for result in results_iter:
         custom_id = result.custom_id
-        req = request_map.get(custom_id)
-        if req is None:
-            continue
 
         if result.result.type == "succeeded":
             message = result.result.message
@@ -144,31 +146,45 @@ def collect_batch_results(
             tokens_out = message.usage.output_tokens
             cost = (tokens_in * 0.003 + tokens_out * 0.015) / 1000 * 0.5  # 50% discount
 
-            cache.put(
-                deck_class=req.deck_class,
-                row_pk=req.row_pk,
-                field_name=req.field_name,
-                field_version=req.field_version,
-                input_hash=req.input_hash,
-                model=model,
-                prompt_template=req.prompt_template,
-                resolved_prompt=req.resolved_prompt,
-                resolved_inputs=req.resolved_inputs,
-                output=output,
-                tokens_in=tokens_in,
-                tokens_out=tokens_out,
-                cost_usd=cost,
+            result_list.append(
+                {
+                    "custom_id": custom_id,
+                    "output": output,
+                    "tokens_in": tokens_in,
+                    "tokens_out": tokens_out,
+                    "cost_usd": cost,
+                }
             )
+
+            # Cache if we have request metadata
+            req = request_map.get(custom_id)
+            if req is not None and cache is not None:
+                cache.put(
+                    deck_class=req.deck_class,
+                    row_pk=req.row_pk,
+                    field_name=req.field_name,
+                    field_version=req.field_version,
+                    input_hash=req.input_hash,
+                    model=model,
+                    prompt_template=req.prompt_template,
+                    resolved_prompt=req.resolved_prompt,
+                    resolved_inputs=req.resolved_inputs,
+                    output=output,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    cost_usd=cost,
+                )
             collected += 1
         else:
             failed += 1
 
     return BatchResult(
         batch_id=batch_id,
-        total_requests=len(requests),
+        total_requests=max(len(request_map), collected + failed),
         completed=collected,
         failed=failed,
         status="collected",
+        results=result_list,
     )
 
 

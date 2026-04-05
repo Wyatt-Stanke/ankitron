@@ -210,7 +210,7 @@ def export_deck(deck_instance: Deck, path: str) -> None:
                     from ankitron.media.pipeline import generate_media_filename
 
                     ext = mf_fld.format.value if mf_fld.format else "png"
-                    fname = generate_media_filename(deck_cls._deck_name, pk_val, mf_name, ext)
+                    fname = generate_media_filename(deck_cls.__name__, pk_val, mf_name, ext)
                     cached_path = cache_dir / fname
                     if cached_path.is_file():
                         media_files.append(str(cached_path))

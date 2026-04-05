@@ -264,12 +264,12 @@ class AICache:
         where = "WHERE deck_class=?" if deck_class else ""
         params: tuple = (deck_class,) if deck_class else ()
         total = self._db.execute(
-            f"SELECT COUNT(*) FROM ai_cache {where}",
-            params,  # noqa: S608
+            f"SELECT COUNT(*) FROM ai_cache {where}",  # noqa: S608
+            params,
         ).fetchone()[0]
         cost = self._db.execute(
-            f"SELECT COALESCE(SUM(cost_usd),0) FROM ai_cache {where}",
-            params,  # noqa: S608
+            f"SELECT COALESCE(SUM(cost_usd),0) FROM ai_cache {where}",  # noqa: S608
+            params,
         ).fetchone()[0]
         return {"total_entries": total, "total_cost_usd": cost}
 

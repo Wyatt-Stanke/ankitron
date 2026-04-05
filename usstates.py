@@ -1,7 +1,12 @@
-from ankitron.deck import Card, Deck
-from ankitron.enums import MediaFormat, MediaType, PKStrategy
-from ankitron.provenance import ProvenanceConfig
-from ankitron.sources import WikidataSource
+from ankitron import (
+    Card,
+    Deck,
+    MediaFormat,
+    MediaType,
+    PKStrategy,
+    ProvenanceConfig,
+    WikidataSource,
+)
 from ankitron.sources.wikidata import P, Q, WikidataQuery
 
 

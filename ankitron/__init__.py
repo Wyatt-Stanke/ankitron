@@ -14,10 +14,12 @@ from ankitron.enums import (
 )
 from ankitron.media import ChartConfig, GeneratedMedia, MapConfig
 from ankitron.provenance import ProvenanceConfig, ProvenancePosition, ProvenanceStyle
+from ankitron.sources import CSVSource, LinkStrategy, WikidataSource
 from ankitron.transform import Transform
 from ankitron.validation import OnMismatch, Validate, VerifyStrategy
 
 __all__ = [
+    "CSVSource",
     "Card",
     "ChartConfig",
     "Deck",
@@ -26,6 +28,7 @@ __all__ = [
     "FieldKind",
     "FieldRule",
     "GeneratedMedia",
+    "LinkStrategy",
     "MapConfig",
     "MediaFormat",
     "MediaType",
@@ -39,4 +42,5 @@ __all__ = [
     "Transform",
     "Validate",
     "VerifyStrategy",
+    "WikidataSource",
 ]

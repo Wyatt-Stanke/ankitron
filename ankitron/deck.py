@@ -43,7 +43,6 @@ from ankitron.logging import (
     section_header,
     warning_count,
 )
-from ankitron.sources.wikidata.properties import PropertyValueType
 from ankitron.transform import Transform
 
 _FIELD_REF_PATTERN = re.compile(
@@ -73,7 +72,7 @@ class Field:
     # Internal — set by source.Field(), not by the user
     _source: Any = dc_field(default=None, repr=False)
     _source_key: str | None = dc_field(default=None, repr=False)
-    _source_value_type: PropertyValueType = dc_field(default=PropertyValueType.LITERAL, repr=False)
+    _source_value_type: Any = dc_field(default=None, repr=False)
 
     # Internal — set by .derive(), not by the user
     _parent: Field | None = dc_field(default=None, repr=False)
