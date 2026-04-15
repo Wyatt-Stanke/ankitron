@@ -2,7 +2,7 @@ from ankitron import Card, CSVSource, Deck, PKStrategy, ProvenanceConfig
 
 
 class PorParaPractice(Deck):
-    deck_name = "School::Spanish::2::Por vs Para::Practice"
+    deck_name = "School::Spanish::2::Unit 5::Por vs Para::Practice"
     provenance = ProvenanceConfig(enabled=True)
 
     css = """\
@@ -72,7 +72,7 @@ hr {
 }
 """
 
-    csv = CSVSource(path="cards/school/spanish/2/por_para/por_para_practice.csv")
+    csv = CSVSource(path="cards/school/spanish/2/5/por_para/por_para_practice.csv")
 
     spanish = csv.Field("Spanish", pk=PKStrategy.FIELD_VALUE)
     english = csv.Field("English")

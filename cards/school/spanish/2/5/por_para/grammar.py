@@ -2,7 +2,7 @@ from ankitron import Card, CSVSource, Deck, PKStrategy, ProvenanceConfig
 
 
 class PorParaGrammar(Deck):
-    deck_name = "School::Spanish::2::Por vs Para::Grammar Rules"
+    deck_name = "School::Spanish::2::Unit 5::Por vs Para::Grammar Rules"
     provenance = ProvenanceConfig(enabled=True)
 
     css = """\
@@ -63,7 +63,7 @@ hr {
 }
 """
 
-    csv = CSVSource(path="cards/school/spanish/2/por_para/por_para_grammar.csv")
+    csv = CSVSource(path="cards/school/spanish/2/5/por_para/por_para_grammar.csv")
 
     rule = csv.Field("Rule", pk=PKStrategy.FIELD_VALUE)
     por_or_para = csv.Field("PorOrPara")
