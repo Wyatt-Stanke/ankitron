@@ -472,6 +472,7 @@ class Deck:
 
     # User-configurable class variables (all optional)
     deck_name: ClassVar[str]
+    css: ClassVar[str]
     tags: ClassVar[list[str | Tag]]
     validators: ClassVar[list[Any]]
     overrides: ClassVar[dict[str, dict[str, Any]]]

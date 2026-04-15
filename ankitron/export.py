@@ -97,11 +97,14 @@ def build_genanki_model(deck_cls: type[Deck]) -> genanki.Model:
             }
         )
 
+    css = getattr(deck_cls, "css", None) or ""
+
     return genanki.Model(
         model_id=model_id,
         name=f"ankitron::{deck_cls._deck_name.removeprefix('ankitron::').lstrip(':')}",
         fields=gk_fields,
         templates=gk_templates,
+        css=css,
     )
 
 

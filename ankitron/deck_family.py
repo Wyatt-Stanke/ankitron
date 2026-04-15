@@ -114,13 +114,15 @@ class DeckFamily:
         # Deep-copy and resolve sources
         ns: dict[str, Any] = {"deck_name": resolved_name}
 
-        # Copy tags, validators, overrides
+        # Copy tags, validators, overrides, css
         if hasattr(cls, "tags"):
             ns["tags"] = cls.tags
         if hasattr(cls, "validators"):
             ns["validators"] = cls.validators
         if hasattr(cls, "overrides"):
             ns["overrides"] = cls.overrides
+        if hasattr(cls, "css"):
+            ns["css"] = cls.css
 
         # Re-create sources with resolved paths
         for src_name, source in cls._family_sources:
