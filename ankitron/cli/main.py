@@ -209,11 +209,14 @@ def _build_output_path(instance: Any, args: argparse.Namespace) -> str:
 
 def _export_merged(instances: list[Any], args: argparse.Namespace) -> None:
     """Merge multiple deck instances into a single .apkg file."""
+    import html
+
     import genanki
 
-    from ankitron.export import build_genanki_model
-    from ankitron.identity import generate_deck_id
+    from ankitron.export import build_genanki_model, resolve_tags
+    from ankitron.identity import generate_deck_id, generate_note_id
     from ankitron.logging import log_success
+    from ankitron.provenance import ProvenanceConfig, ProvenancePosition, provenance_to_json
 
     package = genanki.Package([])
     media_files: list[str] = []
@@ -227,14 +230,33 @@ def _export_merged(instances: list[Any], args: argparse.Namespace) -> None:
         visible_attrs = [name for name, f in cls._all_fields if not f.internal]
         pk_attr = cls._pk_field_attr
 
-        from ankitron.export import resolve_tags
-        from ankitron.identity import generate_note_id
+        # Check provenance config
+        prov_config: ProvenanceConfig | None = getattr(cls, "provenance", None)
+        prov_enabled = (
+            prov_config is not None
+            and prov_config.enabled
+            and prov_config.position != ProvenancePosition.NONE
+        )
+        provenance_data = getattr(instance, "_provenance", None)
 
-        for row in instance._data or []:
-            import html
-
+        for row_idx, row in enumerate(instance._data or []):
             pk_val = row.get(f"_pk_{pk_attr}", row.get(pk_attr, ""))
             field_values = [html.escape(str(row.get(attr, ""))) for attr in visible_attrs]
+
+            # Append provenance JSON if the model includes it
+            if prov_enabled:
+                if provenance_data and row_idx < len(provenance_data):
+                    prov_json = provenance_to_json(
+                        provenance_data[row_idx],
+                        cls._deck_name,
+                        pk_val,
+                        row.get(pk_attr, pk_val),
+                        visible_fields=visible_attrs,
+                    )
+                    field_values.append(prov_json)
+                else:
+                    field_values.append("")
+
             note_id = generate_note_id(cls.__qualname__, pk_val)
             tags = resolve_tags(cls._deck_tags, row) if cls._deck_tags else []
             note = genanki.Note(model=model, fields=field_values, guid=note_id, tags=tags)
