@@ -1,87 +1,87 @@
-spanish	english 
-aburrir	to bore
-acordarse (de) (o:ue)	to remember
-acostarse (o:ue)	to go to bed
-afeitarse	to shave
-la alarma	alarm
-algo	something; anything
-alguien	someone; somebody; anyone
-alguno/a(s), algún	some; any
-antes (de)	before
-la araña	spider
-la ayuda	help
-bañarse	to bathe; to take a bath
-el baño, el cuarto de baño	bathroom
-cepillarse el pelo	to brush one's hair
-cepillarse los dientes	to brush one's teeth
-el cepillo	brush
-el champú	shampoo
-la crema de afeitar	shaving cream
-cuando	when
-desde hace	for (a period of time)
-el desorden	mess
-el despertador	alarm clock
-despertarse (e:ie)	to wake up
-después	afterwards; then
-después (de)	after
-dormirse (o:ue)	to go to sleep; to fall asleep
-la ducha	shower
-ducharse	to shower; to take a shower
-durante	during
-¿En serio?	Really?
-encantar	to like very much; to love (inanimate objects)
-enojarse (con)	to get angry (with)
-entonces	then
-el espejo	mirror
-faltar	to lack; to need
-fascinar	to fascinate; to like very much
-gracioso/a	funny
-gritar	to scream
-importar	to be important to; to matter
-el inodoro	toilet
-interesar	to be interesting to; to interest
-irse	to go away; to leave
-el jabón	soap
-jamás	never; not ever
-el lavabo	sink
-lavarse la cara	to wash one's face
-lavarse las manos	to wash one's hands
-levantarse	to get up
-llamar	to call
-llamarse	to be called; to be named
-luego	then
-el maquillaje	makeup
-maquillarse	to put on makeup
-más tarde	later (on)
-molestar	to bother; to annoy
-nada	nothing; not anything
-nadie	no one; nobody; not anyone
-ni… ni	neither… nor
-ninguno/a, ningún	no; none; not any
-nunca	never; not ever
-o… o	either… or
-las pantuflas	slippers
-la pasta de dientes	toothpaste
-peinarse	to comb one's hair
-ponerse	to put on
-ponerse (+ adj.)	to become (+ adj.)
-por eso	that's why
-por la mañana	in the morning
-por la noche	at night
-por la tarde	in the afternoon; in the evening
-por último	finally
-preocuparse (por)	to worry (about)
-probarse (o:ue)	to try on
-quedar	to be left over; to fit (clothing)
-quedarse	to stay; to remain
-quitarse	to take off
-la rutina diaria	daily routine
-secarse	to dry oneself
-sentarse (e:ie)	to sit down
-sentirse (e:ie)	to feel (how; emotions)
-sentir (e:ie)	to feel (what; sensations)
-siempre	always
-también	also; too
-tampoco	neither; not either
-la toalla	towel
-vestirse (e:i)	to get dressed
+Spanish	ExampleSentence	English	ExampleTranslation	PartOfSpeech	Gender	Notes
+aburrir	Esta película me <b>aburre</b> mucho.	to bore	This movie bores me a lot.	verb		Works like "gustar": the thing that bores is the subject. "Me aburro" = I'm bored (reflexive).
+acordarse (de) (o:ue)	¿Te <b>acuerdas</b> de la fiesta del año pasado?	to remember	Do you remember last year's party?	verb		Reflexive, stem-changing o→ue. Always followed by "de."
+acostarse (o:ue)	Me <b>acuesto</b> a las once todas las noches.	to go to bed	I go to bed at eleven every night.	verb		Reflexive, stem-changing o→ue. Non-reflexive "acostar" = to put someone else to bed.
+afeitarse	Mi papá se <b>afeita</b> todas las mañanas.	to shave	My dad shaves every morning.	verb		Reflexive. "La afeitadora" = razor/shaver.
+la alarma	La <b>alarma</b> sonó a las seis y no la escuché.	alarm	The alarm went off at six and I didn't hear it.	noun	la (feminine)	"Poner la alarma" = to set the alarm.
+algo	¿Quieres <b>algo</b> de comer?	something; anything	Do you want something to eat?	pronoun		Opposite: "nada." Used in questions and affirmative sentences.
+alguien	<b>Alguien</b> dejó la puerta abierta.	someone; somebody; anyone	Someone left the door open.	pronoun		Opposite: "nadie." Takes singular verbs.
+alguno/a(s), algún	¿Tienes <b>alguna</b> pregunta sobre la tarea?	some; any	Do you have any questions about the homework?	adjective / pronoun		"Algún" before masc. sing. nouns (algún día). Opposite: "ninguno/a."
+antes (de)	Siempre desayuno <b>antes de</b> salir de casa.	before	I always eat breakfast before leaving the house.	adverb / preposition		"Antes de" + infinitive. "Antes de que" + subjunctive. Opposite: "después (de)."
+la araña	Hay una <b>araña</b> enorme en el baño.	spider	There's a huge spider in the bathroom.	noun	la (feminine)	
+la ayuda	Necesito tu <b>ayuda</b> con este proyecto.	help	I need your help with this project.	noun	la (feminine)	Verb: "ayudar" (to help). "¡Ayuda!" = Help! (exclamation).
+bañarse	Los niños se <b>bañan</b> antes de cenar.	to bathe; to take a bath	The kids bathe before dinner.	verb		Reflexive. "La bañera" = bathtub.
+el baño, el cuarto de baño	¿Dónde está el <b>baño</b>?	bathroom	Where is the bathroom?	noun	el (masculine)	"El baño" is everyday; "el cuarto de baño" is more formal.
+cepillarse el pelo	Mi hija se <b>cepilla el pelo</b> después de ducharse.	to brush one's hair	My daughter brushes her hair after showering.	verb phrase		Reflexive. Uses definite article "el pelo," not possessive.
+cepillarse los dientes	Debes <b>cepillarte los dientes</b> tres veces al día.	to brush one's teeth	You should brush your teeth three times a day.	verb phrase		Reflexive. Uses "los dientes," not possessive.
+el cepillo	¿Dónde dejé mi <b>cepillo</b>?	brush	Where did I leave my brush?	noun	el (masculine)	"El cepillo de dientes" = toothbrush. "El cepillo de pelo" = hairbrush.
+el champú	Se me acabó el <b>champú</b>. Necesito comprar más.	shampoo	I ran out of shampoo. I need to buy more.	noun	el (masculine)	Plural: los champús.
+la crema de afeitar	Compré una nueva <b>crema de afeitar</b> para mi esposo.	shaving cream	I bought a new shaving cream for my husband.	noun	la (feminine)	
+cuando	Te llamaré <b>cuando</b> llegue a casa.	when	I'll call you when I get home.	conjunction		With future actions, it triggers subjunctive: "cuando llegue." For questions, use "¿cuándo?" with accent.
+desde hace	Estudio español <b>desde hace</b> dos años.	for (a period of time)	I've been studying Spanish for two years.	expression		Used with present tense for ongoing actions that started in the past.
+el desorden	¡Qué <b>desorden</b> hay en tu habitación!	mess	What a mess there is in your room!	noun	el (masculine)	Opposite: "el orden" (order).
+el despertador	Mi <b>despertador</b> no sonó esta mañana.	alarm clock	My alarm clock didn't go off this morning.	noun	el (masculine)	From the verb "despertar" (to wake).
+despertarse (e:ie)	Me <b>despierto</b> a las siete de la mañana.	to wake up	I wake up at seven in the morning.	verb		Reflexive, stem-changing e→ie.
+después	Primero desayuné y <b>después</b> fui al trabajo.	afterwards; then	First I had breakfast and then I went to work.	adverb		Stands alone (no "de"). Also: "luego," "entonces."
+después (de)	<b>Después de</b> cenar, vemos una película.	after	After having dinner, we watch a movie.	preposition		"Después de" + infinitive or noun. Opposite: "antes (de)."
+dormirse (o:ue)	Me <b>duermo</b> fácilmente cuando estoy cansado.	to go to sleep; to fall asleep	I fall asleep easily when I'm tired.	verb		Reflexive, stem-changing o→ue. Non-reflexive "dormir" = to sleep.
+la ducha	La <b>ducha</b> del hotel tiene muy buena presión.	shower	The hotel shower has very good pressure.	noun	la (feminine)	
+ducharse	Me <b>ducho</b> todas las mañanas antes de trabajar.	to shower; to take a shower	I shower every morning before work.	verb		Reflexive. Regular -ar verb.
+durante	Trabajé <b>durante</b> toda la noche.	during	I worked during the whole night.	preposition		Also means "for" when describing duration.
+¿En serio?	—Gané la lotería. —<b>¿En serio?</b>	Really?	"I won the lottery." "Really?"	expression		Expresses surprise or disbelief. Also: "¿De verdad?"
+encantar	Me <b>encanta</b> la música clásica.	to like very much; to love (inanimate objects)	I love classical music.	verb		Works like "gustar": the thing loved is the subject. Don't use "amar" for objects/activities.
+enojarse (con)	Mi jefe se <b>enojó conmigo</b> por llegar tarde.	to get angry (with)	My boss got angry with me for being late.	verb		Reflexive. In Spain: "enfadarse."
+entonces	No tenía dinero; <b>entonces</b> no fui al cine.	then	I didn't have money; then I didn't go to the movies.	adverb		Often means "so" or "in that case." Synonym: "luego."
+el espejo	Me miré en el <b>espejo</b> antes de salir.	mirror	I looked at myself in the mirror before leaving.	noun	el (masculine)	
+faltar	Me <b>faltan</b> dos páginas para terminar el libro.	to lack; to need	I have two pages left to finish the book.	verb		Works like "gustar." Literally "X is lacking to me."
+fascinar	Nos <b>fascinan</b> los documentales de naturaleza.	to fascinate; to like very much	Nature documentaries fascinate us.	verb		Works like "gustar." Stronger than "encantar."
+gracioso/a	Mi abuelo es muy <b>gracioso</b>; siempre nos hace reír.	funny	My grandpa is very funny; he always makes us laugh.	adjective		Changes for gender: gracioso/graciosa. "Divertido/a" also means fun/funny.
+gritar	No <b>grites</b>, te puedo oír perfectamente.	to scream; to shout	Don't shout, I can hear you perfectly.	verb		Regular -ar verb.
+importar	No me <b>importa</b> lo que digan los demás.	to be important to; to matter	I don't care what others say.	verb		Works like "gustar." "No me importa" = I don't care / it doesn't matter to me.
+el inodoro	El <b>inodoro</b> está tapado; llama al plomero.	toilet	The toilet is clogged; call the plumber.	noun	el (masculine)	Also: "el retrete," "el váter" (Spain).
+interesar	Me <b>interesa</b> mucho la historia antigua.	to be interesting to; to interest	Ancient history really interests me.	verb		Works like "gustar."
+irse	Ya es tarde; me <b>voy</b>.	to go away; to leave	It's late now; I'm leaving.	verb		Reflexive form of "ir." Emphasizes departure, not destination.
+el jabón	Lávate las manos con <b>jabón</b>.	soap	Wash your hands with soap.	noun	el (masculine)	Plural: los jabones.
+jamás	<b>Jamás</b> volveré a ese restaurante.	never; not ever	I will never go back to that restaurant.	adverb		Stronger/more emphatic than "nunca." "Nunca jamás" = never ever.
+el lavabo	El <b>lavabo</b> del baño está roto.	sink	The bathroom sink is broken.	noun	el (masculine)	In some regions: "el lavamanos" or "el lavatorio."
+lavarse la cara	Me <b>lavo la cara</b> con agua fría para despertarme.	to wash one's face	I wash my face with cold water to wake up.	verb phrase		Reflexive. "La cara," not "mi cara."
+lavarse las manos	<b>Lávate las manos</b> antes de comer.	to wash one's hands	Wash your hands before eating.	verb phrase		Reflexive. "Las manos," not "tus manos."
+levantarse	Me <b>levanto</b> temprano los fines de semana.	to get up	I get up early on weekends.	verb		Reflexive. Non-reflexive "levantar" = to lift.
+llamar	<b>Llámame</b> cuando llegues a casa.	to call	Call me when you get home.	verb		Regular -ar verb. "Llamar por teléfono" = to call on the phone.
+llamarse	¿Cómo te <b>llamas</b>? Me <b>llamo</b> Ana.	to be called; to be named	What's your name? My name is Ana.	verb		Reflexive form of "llamar." Literally "to call oneself."
+luego	Primero estudio y <b>luego</b> salgo con amigos.	then	First I study and then I go out with friends.	adverb		Also: "¡Hasta luego!" = See you later!
+el maquillaje	Ella lleva muy poco <b>maquillaje</b>.	makeup	She wears very little makeup.	noun	el (masculine)	
+maquillarse	Mi hermana se <b>maquilla</b> antes de salir.	to put on makeup	My sister puts on makeup before going out.	verb		Reflexive.
+más tarde	Te veo <b>más tarde</b> en el café.	later (on)	I'll see you later at the café.	adverb		
+molestar	Me <b>molesta</b> el ruido de la calle.	to bother; to annoy	The street noise bothers me.	verb		Works like "gustar." False friend — does not mean "to molest."
+nada	No hay <b>nada</b> en el refrigerador.	nothing; not anything	There's nothing in the fridge.	pronoun		Opposite: "algo." With double negative: "No... nada."
+nadie	<b>Nadie</b> me llamó ayer.	no one; nobody; not anyone	No one called me yesterday.	pronoun		Opposite: "alguien." With double negative: "No... nadie."
+ni… ni	<b>Ni</b> mi hermano <b>ni</b> yo sabemos cocinar.	neither… nor	Neither my brother nor I know how to cook.	conjunction		Opposite: "o... o."
+ninguno/a, ningún	No tengo <b>ningún</b> plan para el sábado.	no; none; not any	I have no plans for Saturday.	adjective / pronoun		"Ningún" before masc. sing. nouns. Almost always singular. Opposite: "alguno/a."
+nunca	<b>Nunca</b> he estado en Argentina.	never; not ever	I have never been to Argentina.	adverb		With double negative: "No... nunca." Similar to "jamás."
+o… o	<b>O</b> vienes conmigo <b>o</b> te quedas en casa.	either… or	Either you come with me or you stay home.	conjunction		Opposite: "ni... ni."
+las pantuflas	En casa siempre llevo <b>pantuflas</b>.	slippers	At home I always wear slippers.	noun	las (feminine plural)	Also: "las zapatillas" in some regions.
+la pasta de dientes	Se me acabó la <b>pasta de dientes</b>.	toothpaste	I ran out of toothpaste.	noun	la (feminine)	Also: "la pasta dental," "la crema dental."
+peinarse	Ella se <b>peina</b> el cabello antes de salir.	to comb one's hair	She combs her hair before going out.	verb		Reflexive. "El peine" = the comb.
+ponerse	Me <b>pongo</b> el abrigo porque hace frío.	to put on	I put on my coat because it's cold.	verb		Reflexive of "poner" (irregular: yo pongo). Used for clothing. Opposite: "quitarse."
+ponerse (+ adj.)	Mi mamá se <b>puso</b> triste con la noticia.	to become (+ adj.)	My mom became sad with the news.	verb		Used with adjectives to describe a change of state or mood.
+por eso	Estaba enfermo; <b>por eso</b> no fui a la fiesta.	that's why	I was sick; that's why I didn't go to the party.	expression		
+por la mañana	Siempre corro <b>por la mañana</b>.	in the morning	I always run in the morning.	expression		Use "de la mañana" with a specific time: "a las 8 de la mañana."
+por la noche	Preferimos cenar <b>por la noche</b>.	at night	We prefer to have dinner at night.	expression		Use "de la noche" with a specific time: "a las 10 de la noche."
+por la tarde	Voy al gimnasio <b>por la tarde</b>.	in the afternoon; in the evening	I go to the gym in the afternoon.	expression		Use "de la tarde" with a specific time.
+por último	<b>Por último</b>, quiero agradecerles a todos.	finally	Finally, I want to thank you all.	expression		Used to introduce the last item in a sequence. Also: "finalmente."
+preocuparse (por)	No te <b>preocupes por</b> mí; estoy bien.	to worry (about)	Don't worry about me; I'm fine.	verb		Reflexive. Followed by "por."
+probarse (o:ue)	Me voy a <b>probar</b> estos zapatos.	to try on	I'm going to try on these shoes.	verb		Reflexive, stem-changing o→ue. Non-reflexive "probar" = to try/taste.
+quedar	Me <b>quedan</b> dos dólares en la billetera.	to be left over; to fit (clothing)	I have two dollars left in my wallet.	verb		Works like "gustar." Also: "Este vestido te queda bien" = This dress fits you well.
+quedarse	Me <b>quedé</b> en casa todo el fin de semana.	to stay; to remain	I stayed home all weekend.	verb		Reflexive. Different meaning from "quedar."
+quitarse	<b>Quítate</b> los zapatos antes de entrar.	to take off	Take off your shoes before entering.	verb		Reflexive. Used for clothing. Opposite: "ponerse."
+la rutina diaria	Mi <b>rutina diaria</b> comienza a las seis de la mañana.	daily routine	My daily routine starts at six in the morning.	noun	la (feminine)	
+secarse	Me <b>seco</b> el pelo con una toalla.	to dry oneself	I dry my hair with a towel.	verb		Reflexive. Spelling change in preterite: yo me sequé.
+sentarse (e:ie)	Por favor, <b>siéntate</b> aquí.	to sit down	Please, sit down here.	verb		Reflexive, stem-changing e→ie.
+sentirse (e:ie)	Me <b>siento</b> muy feliz hoy.	to feel (how; emotions)	I feel very happy today.	verb		Reflexive, stem-changing e→ie. For emotions/states: "Me siento triste/cansado."
+sentir (e:ie)	<b>Siento</b> un dolor en la espalda.	to feel (what; sensations)	I feel a pain in my back.	verb		Non-reflexive, stem-changing e→ie. For sensations or regret: "Lo siento" = I'm sorry.
+siempre	<b>Siempre</b> llego temprano al trabajo.	always	I always arrive early to work.	adverb		Opposite: "nunca."
+también	A mí <b>también</b> me gusta el chocolate.	also; too	I like chocolate too.	adverb		Opposite: "tampoco."
+tampoco	A mí <b>tampoco</b> me gusta el café.	neither; not either	I don't like coffee either.	adverb		Used in negative sentences. Opposite: "también."
+la toalla	Necesito una <b>toalla</b> limpia para la ducha.	towel	I need a clean towel for the shower.	noun	la (feminine)	
+vestirse (e:i)	Me <b>visto</b> rápido porque voy tarde.	to get dressed	I get dressed quickly because I'm running late.	verb		Reflexive, stem-changing e→i. Non-reflexive "vestir" = to dress (someone).
