@@ -2,7 +2,7 @@ from ankitron import Card, CSVSource, DeckFamily, PKStrategy, ProvenanceConfig
 
 
 class SpanishVocabulary(DeckFamily):
-    deck_name = "ankitron::School::Spanish::2::Vocabulary::Lesson {lesson}"
+    deck_name = "School::Spanish::2::Unit {lesson}::Vocabulary"
     provenance = ProvenanceConfig(enabled=True)
 
     csv = CSVSource(path="cards/school/spanish/2/vocabulary/lesson{lesson}.tsv", delimiter="\t")
@@ -23,7 +23,7 @@ class SpanishVocabulary(DeckFamily):
         import glob
 
         lessons = []
-        for path in sorted(glob.glob("cards/school/spanish/2/vocabulary/lesson*.tsv")):
+        for path in sorted(glob.glob("cards/school/spanish/2/vocabulary/lesson*+.tsv")):
             lesson = int(path.split("lesson")[1].split(".")[0])
             lessons.append({"lesson": lesson})
         return lessons
