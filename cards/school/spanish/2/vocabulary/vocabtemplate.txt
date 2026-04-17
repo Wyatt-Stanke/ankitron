@@ -1,0 +1,100 @@
+Name: "Vocabulary - Spanish"
+
+Fields:
+1. Spanish
+2. ExampleSentence
+3. English
+4. ExampleTranslation
+5. PartOfSpeech
+6. Gender
+7. Notes
+
+Card 1
+Front
+<div class="word">{{Spanish}}</div>
+<div class="pos">{{PartOfSpeech}}{{#Gender}} · {{Gender}}{{/Gender}}</div>
+<div class="example">{{ExampleSentence}}</div>
+
+Back
+{{FrontSide}}
+<hr>
+<div class="answer">{{English}}</div>
+<div class="example-translation">{{ExampleTranslation}}</div>
+{{#Notes}}<div class="notes">{{Notes}}</div>{{/Notes}}
+
+Card 2
+Front
+<div class="word">{{English}}</div>
+<div class="pos">{{PartOfSpeech}}</div>
+<div class="example-translation">{{ExampleTranslation}}</div>
+
+Back
+{{FrontSide}}
+<hr>
+<div class="answer">{{Spanish}}{{#Gender}} <span class="gender">({{Gender}})</span>{{/Gender}}</div>
+<div class="example">{{ExampleSentence}}</div>
+{{#Notes}}<div class="notes">{{Notes}}</div>{{/Notes}}
+
+Styling for both cards
+.card {
+  font-family: Georgia, serif;
+  font-size: 20px;
+  text-align: center;
+  color: #333;
+  background: #fffef5;
+  padding: 20px;
+}
+
+.word {
+  font-size: 32px;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+.pos {
+  font-size: 14px;
+  color: #888;
+  font-style: italic;
+  margin-bottom: 16px;
+}
+
+.gender {
+  font-size: 14px;
+  color: #888;
+  font-weight: normal;
+}
+
+.example {
+  font-size: 18px;
+  color: #555;
+  margin-top: 10px;
+  font-style: italic;
+}
+
+.answer {
+  font-size: 28px;
+  font-weight: bold;
+  color: #2a7b3f;
+  margin-top: 10px;
+}
+
+.example-translation {
+  font-size: 16px;
+  color: #666;
+  margin-top: 8px;
+}
+
+.notes {
+  font-size: 14px;
+  color: #999;
+  margin-top: 14px;
+  border-top: 1px dashed #ccc;
+  padding-top: 10px;
+}
+
+hr {
+  border: none;
+  border-top: 2px solid #ddd;
+  margin: 20px 0;
+}
+
