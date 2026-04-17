@@ -37,10 +37,13 @@ class DeckFamily:
 
     # User-configurable class variables
     deck_name: ClassVar[str]
+    model_name: ClassVar[str]
+    css: ClassVar[str]
     tags: ClassVar[list[str | Tag]]
     validators: ClassVar[list[Any]]
     overrides: ClassVar[dict[str, dict[str, Any]]]
     params: ClassVar[list[dict[str, Any]]]
+    provenance: ClassVar[Any]
 
     # Set by __init_subclass__
     _family_fields: ClassVar[list[tuple[str, Field]]]
@@ -114,22 +117,17 @@ class DeckFamily:
         # Deep-copy and resolve sources
         ns: dict[str, Any] = {"deck_name": resolved_name}
 
-        # Copy tags, validators, overrides, css
-        if hasattr(cls, "tags"):
-            ns["tags"] = cls.tags
-        if hasattr(cls, "validators"):
-            ns["validators"] = cls.validators
-        if hasattr(cls, "overrides"):
-            ns["overrides"] = cls.overrides
-        if hasattr(cls, "css"):
-            ns["css"] = cls.css
+        # Copy tags, validators, overrides, css, provenance, model_name
+        for attr in ("tags", "validators", "overrides", "css", "provenance", "model_name"):
+            if hasattr(cls, attr):
+                ns[attr] = getattr(cls, attr)
 
         # Re-create sources with resolved paths
         for src_name, source in cls._family_sources:
             new_src = _resolve_source(source, params)
             ns[src_name] = new_src
 
-        # Re-create fields bound to the new sources
+        # Re-create fields bound to the new sources, then fix up cross-references
         source_id_map: dict[int, Any] = {}
         for (_src_name, orig_src), new_src_name in zip(
             cls._family_sources,
@@ -138,9 +136,15 @@ class DeckFamily:
         ):
             source_id_map[id(orig_src)] = ns.get(new_src_name, orig_src)
 
+        # First pass: copy all fields and rebind sources
+        field_id_map: dict[int, Field] = {}  # old field id -> new field
         for attr_name, fld in cls._family_fields:
             new_fld = _copy_field(fld, source_id_map)
             ns[attr_name] = new_fld
+            field_id_map[id(fld)] = new_fld
+
+        # Second pass: fix up cross-references between fields
+        _remap_field_refs(cls._family_fields, field_id_map, ns)
 
         # Copy card classes
         for card_cls in cls._family_cards:
@@ -185,3 +189,45 @@ def _copy_field(fld: Field, source_id_map: dict[int, Any]) -> Field:
         if new_src is not None:
             new_fld._source = new_src
     return new_fld
+
+
+def _remap_field_refs(
+    family_fields: list[tuple[str, Field]],
+    field_id_map: dict[int, Field],
+    ns: dict[str, Any],
+) -> None:
+    """Fix up cross-references between copied fields.
+
+    After the first copy pass, derived/computed/cascade/verify references
+    still point at the *original* family fields.  This function remaps
+    them to the new variant copies stored in *ns*.
+    """
+    for attr_name, orig_fld in family_fields:
+        new_fld: Field = ns[attr_name]
+
+        # Derived field: remap _parent
+        if orig_fld._parent is not None:
+            remapped = field_id_map.get(id(orig_fld._parent))
+            if remapped is not None:
+                new_fld._parent = remapped
+
+        # Computed field: remap _computed_inputs list
+        if orig_fld._computed_inputs is not None:
+            new_fld._computed_inputs = [
+                field_id_map.get(id(inp), inp) for inp in orig_fld._computed_inputs
+            ]
+
+        # Cascade field: remap _cascade_sources list
+        if orig_fld._cascade_sources is not None:
+            new_fld._cascade_sources = [
+                field_id_map.get(id(src), src) for src in orig_fld._cascade_sources
+            ]
+
+        # Verify config: remap the 'against' field reference
+        if orig_fld._verify_config is not None:
+            new_fld._verify_config = dict(orig_fld._verify_config)
+            against = orig_fld._verify_config.get("against")
+            if against is not None and isinstance(against, Field):
+                remapped = field_id_map.get(id(against))
+                if remapped is not None:
+                    new_fld._verify_config["against"] = remapped
