@@ -50,15 +50,11 @@ def log_success(message: str) -> None:
 
 
 def log_warn(message: str) -> None:
-    _increment_warning_count()
+    global _warning_count  # noqa: PLW0603
+    _warning_count += 1
     if _quiet:
         return
     console.print(f"  {ICON_WARN} {message}")
-
-
-def _increment_warning_count() -> None:
-    global _warning_count  # noqa: PLW0603
-    _warning_count += 1
 
 
 def log_error(message: str) -> None:

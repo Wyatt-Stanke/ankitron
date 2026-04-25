@@ -11,6 +11,8 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from ankitron.ai.utils import calculate_cost, require_anthropic_client
+
 if TYPE_CHECKING:
     from ankitron.ai.cache import AICache
 
@@ -49,20 +51,7 @@ def submit_batch(
     requests: list[BatchRequest],
 ) -> BatchResult:
     """Submit a batch of AI requests to Anthropic's Message Batches API."""
-    try:
-        import anthropic
-    except ImportError as err:
-        raise ImportError(
-            "Batch processing requires the 'ai' extra. Install with: pip install ankitron[ai]"
-        ) from err
-
-    import os
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY environment variable is required.")
-
-    client = anthropic.Anthropic(api_key=api_key)
+    client = require_anthropic_client("batch")
 
     batch_requests = [
         {
@@ -87,14 +76,7 @@ def submit_batch(
 
 def check_batch_status(batch_id: str) -> BatchResult:
     """Check the status of a submitted batch."""
-    try:
-        import anthropic
-    except ImportError as err:
-        raise ImportError("Batch processing requires the 'ai' extra.") from err
-
-    import os
-
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    client = require_anthropic_client("batch")
     batch = client.messages.batches.retrieve(batch_id)
 
     return BatchResult(
@@ -119,14 +101,7 @@ def collect_batch_results(
     If *requests* and *cache* are provided, results are cached using the
     request metadata.  Otherwise, results are returned without caching.
     """
-    try:
-        import anthropic
-    except ImportError as err:
-        raise ImportError("Batch processing requires the 'ai' extra.") from err
-
-    import os
-
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    client = require_anthropic_client("batch")
 
     # Build lookup from custom_id → BatchRequest (if available)
     request_map = {req.custom_id: req for req in requests} if requests else {}
@@ -144,7 +119,7 @@ def collect_batch_results(
             output = message.content[0].text.strip()
             tokens_in = message.usage.input_tokens
             tokens_out = message.usage.output_tokens
-            cost = (tokens_in * 0.003 + tokens_out * 0.015) / 1000 * 0.5  # 50% discount
+            cost = calculate_cost(tokens_in, tokens_out, batch=True)
 
             result_list.append(
                 {
@@ -190,14 +165,7 @@ def collect_batch_results(
 
 def cancel_batch(batch_id: str) -> None:
     """Cancel a pending batch."""
-    try:
-        import anthropic
-    except ImportError as err:
-        raise ImportError("Batch processing requires the 'ai' extra.") from err
-
-    import os
-
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    client = require_anthropic_client("batch")
     client.messages.batches.cancel(batch_id)
 
 

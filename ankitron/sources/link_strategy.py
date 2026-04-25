@@ -12,8 +12,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from ankitron.deck import Field
-
 
 @dataclass
 class LinkStrategy:
@@ -23,22 +21,12 @@ class LinkStrategy:
     _params: dict[str, Any]
 
     @staticmethod
-    def sitelinks() -> LinkStrategy:
-        """Link via Wikidata sitelinks (Wikipedia article titles from Wikidata items)."""
-        return LinkStrategy(_kind="sitelinks", _params={})
-
-    @staticmethod
     def field(name: str) -> LinkStrategy:
         """Link by matching a field value between sources.
 
         Note: Matching is case-insensitive and strips whitespace.
         """
         return LinkStrategy(_kind="field", _params={"field_name": name})
-
-    @staticmethod
-    def geocode(coords_field: Field) -> LinkStrategy:
-        """Link by geographic proximity to a coordinates field."""
-        return LinkStrategy(_kind="geocode", _params={"coords_field": coords_field})
 
     @staticmethod
     def custom(fn: Callable[[dict, dict], bool]) -> LinkStrategy:
@@ -58,5 +46,4 @@ class LinkStrategy:
             return a == b and a != ""
         if self._kind == "custom":
             return self._params["fn"](primary_row, candidate_row)
-        # sitelinks and geocode need specific source integration
         return False

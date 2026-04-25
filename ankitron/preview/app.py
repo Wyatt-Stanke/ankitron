@@ -5,10 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from ankitron.deck import _FIELD_REF_PATTERN
+from ankitron.utils import get_pk_value
 
 _IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]+)(")', flags=re.IGNORECASE)
 
@@ -52,6 +52,16 @@ def _pk_matches(row: dict[str, Any], pk_attr: str, requested_pk: str) -> bool:
     canonical_pk = str(row.get(f"_pk_{pk_attr}", row.get(pk_attr, "")))
     display_pk = str(row.get(pk_attr, ""))
     return requested_pk in {canonical_pk, display_pk}
+
+
+def _find_row(
+    instance: Any, pk: str, pk_attr: str
+) -> tuple[int, dict[str, Any]] | tuple[None, None]:
+    """Find a row by PK. Returns (row_idx, row) or (None, None) if not found."""
+    for row_idx, row in enumerate(instance._data or []):
+        if _pk_matches(row, pk_attr, pk):
+            return row_idx, row
+    return None, None
 
 
 def _json_safe(value: Any) -> Any:
@@ -105,9 +115,9 @@ def create_preview_app(
 
     app = FastAPI(title="ankitron preview")
 
-    media_dir = Path.home() / ".cache" / "ankitron" / "media"
-    media_dir.mkdir(parents=True, exist_ok=True)
-    app.mount("/media", StaticFiles(directory=str(media_dir)), name="media")
+    from ankitron.cache import MEDIA_CACHE_DIR
+    MEDIA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    app.mount("/media", StaticFiles(directory=str(MEDIA_CACHE_DIR)), name="media")
 
     def runtime() -> dict[str, Any]:
         return state["runtime"]
@@ -147,7 +157,7 @@ def create_preview_app(
         pk_attr = cls._pk_field_attr
         for row in (instance._data or [])[offset : offset + limit]:
             out = {key: row.get(key, "") for key in visible}
-            out["__pk"] = row.get(f"_pk_{pk_attr}", row.get(pk_attr, ""))
+            out["__pk"] = get_pk_value(row, pk_attr)
             rows.append(_rewrite_row_media_values(out))
         return JSONResponse({"rows": rows, "total": len(instance._data or [])})
 
@@ -157,13 +167,13 @@ def create_preview_app(
         cls = data["deck"]
         instance = data["instance"]
         pk_attr = cls._pk_field_attr
-        for row in instance._data or []:
-            if _pk_matches(row, pk_attr, pk):
-                visible = [name for name, field in cls._all_fields if not field.internal]
-                out = {key: row.get(key, "") for key in visible}
-                out["__pk"] = row.get(f"_pk_{pk_attr}", row.get(pk_attr, ""))
-                return JSONResponse(_rewrite_row_media_values(out))
-        return JSONResponse({"error": "not found"}, status_code=404)
+        _row_idx, row = _find_row(instance, pk, pk_attr)
+        if row is None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        visible = [name for name, field in cls._all_fields if not field.internal]
+        out = {key: row.get(key, "") for key in visible}
+        out["__pk"] = get_pk_value(row, pk_attr)
+        return JSONResponse(_rewrite_row_media_values(out))
 
     @app.get("/api/provenance/{pk}")
     async def api_provenance(pk: str) -> JSONResponse:
@@ -176,19 +186,18 @@ def create_preview_app(
         if not provenance_rows:
             return JSONResponse({"error": "provenance not available"}, status_code=404)
 
-        for row_idx, row in enumerate(instance._data or []):
-            if _pk_matches(row, pk_attr, pk):
-                prov_row = provenance_rows[row_idx] if row_idx < len(provenance_rows) else {}
-                return JSONResponse(
-                    {
-                        "__pk": row.get(f"_pk_{pk_attr}", row.get(pk_attr, "")),
-                        "field": pk_attr,
-                        "display": row.get(pk_attr, ""),
-                        "provenance": _serialize_provenance_row(prov_row),
-                    }
-                )
-
-        return JSONResponse({"error": "row not found"}, status_code=404)
+        row_idx, row = _find_row(instance, pk, pk_attr)
+        if row is None:
+            return JSONResponse({"error": "row not found"}, status_code=404)
+        prov_row = provenance_rows[row_idx] if row_idx < len(provenance_rows) else {}
+        return JSONResponse(
+            {
+                "__pk": get_pk_value(row, pk_attr),
+                "field": pk_attr,
+                "display": row.get(pk_attr, ""),
+                "provenance": _serialize_provenance_row(prov_row),
+            }
+        )
 
     @app.get("/api/card/{card_type}/{pk}")
     async def api_card(card_type: str, pk: str) -> JSONResponse:
@@ -205,13 +214,10 @@ def create_preview_app(
         if card_cls is None:
             return JSONResponse({"error": "card type not found"}, status_code=404)
 
-        for row in instance._data or []:
-            if _pk_matches(row, pk_attr, pk):
-                return JSONResponse(_render_card(card_cls, row))
-        return JSONResponse(
-            {"error": "row not found"},
-            status_code=404,
-        )
+        _row_idx, row = _find_row(instance, pk, pk_attr)
+        if row is None:
+            return JSONResponse({"error": "row not found"}, status_code=404)
+        return JSONResponse(_render_card(card_cls, row))
 
     @app.get("/api/tags")
     async def api_tags() -> JSONResponse:

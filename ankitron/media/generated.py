@@ -8,12 +8,29 @@ generate media content during the build process.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING
-
-from ankitron.enums import FieldKind
 
 if TYPE_CHECKING:
     from ankitron.deck import Field
+
+
+class MediaType(Enum):
+    """Declares the type of media a field contains."""
+
+    IMAGE = "image"
+    AUDIO = "audio"
+
+
+class MediaFormat(Enum):
+    """Target format for media conversion."""
+
+    PNG = "png"
+    JPEG = "jpeg"
+    SVG = "svg"
+    WEBP = "webp"
+    MP3 = "mp3"
+    OGG = "ogg"
 
 
 @dataclass
@@ -48,6 +65,27 @@ class GeneratedMedia:
     """Factory for creating generated media fields."""
 
     @staticmethod
+    def _make_generated_field(
+        input_field: Field,
+        media_type: str,
+        config: object,
+        *,
+        internal: bool = False,
+        unused_ok: bool = False,
+    ) -> Field:
+        from ankitron.deck import Field as DeckField, FieldKind
+
+        fld = DeckField(
+            kind=FieldKind.IMAGE,
+            internal=internal,
+            unused_ok=unused_ok,
+        )
+        fld._generated_media_type = media_type  # type: ignore[attr-defined]
+        fld._generated_media_config = config  # type: ignore[attr-defined]
+        fld._generated_media_input = input_field  # type: ignore[attr-defined]
+        return fld
+
+    @staticmethod
     def map(
         coords_field: Field,
         *,
@@ -63,18 +101,9 @@ class GeneratedMedia:
             coords_field: Field containing coordinates (lat, lon).
             config: Map rendering configuration.
         """
-        from ankitron.deck import Field as DeckField
-
-        cfg = config or MapConfig()
-        fld = DeckField(
-            kind=FieldKind.IMAGE,
-            internal=internal,
-            unused_ok=unused_ok,
+        return GeneratedMedia._make_generated_field(
+            coords_field, "map", config or MapConfig(), internal=internal, unused_ok=unused_ok
         )
-        fld._generated_media_type = "map"  # type: ignore[attr-defined]
-        fld._generated_media_config = cfg  # type: ignore[attr-defined]
-        fld._generated_media_input = coords_field  # type: ignore[attr-defined]
-        return fld
 
     @staticmethod
     def chart(
@@ -92,15 +121,6 @@ class GeneratedMedia:
             data_field: Field containing the data to chart.
             config: Chart rendering configuration.
         """
-        from ankitron.deck import Field as DeckField
-
-        cfg = config or ChartConfig()
-        fld = DeckField(
-            kind=FieldKind.IMAGE,
-            internal=internal,
-            unused_ok=unused_ok,
+        return GeneratedMedia._make_generated_field(
+            data_field, "chart", config or ChartConfig(), internal=internal, unused_ok=unused_ok
         )
-        fld._generated_media_type = "chart"  # type: ignore[attr-defined]
-        fld._generated_media_config = cfg  # type: ignore[attr-defined]
-        fld._generated_media_input = data_field  # type: ignore[attr-defined]
-        return fld

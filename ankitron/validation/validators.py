@@ -10,14 +10,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from dataclasses import field as dc_field
+from enum import Enum
 from typing import TYPE_CHECKING, Any
-
-from ankitron.enums import Severity
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from ankitron.deck import Field
+
+
+class Severity(Enum):
+    """Severity level for validators."""
+
+    ERROR = "error"  # Validation failure prevents export
+    WARN = "warn"  # Warning is logged, export proceeds
 
 
 @dataclass

@@ -3,15 +3,42 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from dataclasses import field as dc_field
+from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from ankitron.media.generated import MediaFormat, MediaType
     from ankitron.provenance import ProvenanceConfig
 
 from rich import box
 from rich.table import Table
+
+
+class FieldKind(Enum):
+    """Declares the type of content a field contains."""
+
+    TEXT = "text"
+    IMAGE = "image"
+    AUDIO = "audio"
+    CLOZE = "cloze"
+
+
+class PKStrategy(Enum):
+    """Controls how the primary key value is derived for note ID generation."""
+
+    FIELD_VALUE = "field_value"
+    SOURCE_ID = "source_id"
+
+
+class FieldRule(Enum):
+    """Per-field expectation about data completeness."""
+
+    REQUIRED = "required"  # fetch() raises error if missing
+    EXPECTED = "expected"  # fetch() logs warning if missing
+    OPTIONAL = "optional"  # Missing values are expected and normal
+
 
 from ankitron.cache import Cache
 from ankitron.deck_fetch_pipeline import (
@@ -28,13 +55,6 @@ from ankitron.deck_fetch_pipeline import (
     _run_validators,
     _toposort_sources,
 )
-from ankitron.enums import (
-    FieldKind,
-    FieldRule,
-    MediaFormat,
-    MediaType,
-    PKStrategy,
-)
 from ankitron.logging import (
     console,
     log_info,
@@ -44,6 +64,7 @@ from ankitron.logging import (
     warning_count,
 )
 from ankitron.transform import Transform
+
 
 _FIELD_REF_PATTERN = re.compile(
     r"\{\{(?!FrontSide|Tags|Type|Deck|Subdeck|CardFlag|Card|#|/|\^|type:|hint:|text:|cloze:|type:cloze:|type:nc:|c\d+::)(\w+)\}\}"
@@ -449,6 +470,7 @@ def _store_deck_metadata(
     cls._pk_field_attr = pk_fields[0][0]
     cls._derived_order = derived_order
     cls._visible_fields = [(name, fld) for name, fld in fields if not fld.internal]
+    cls._media_fields = [(name, fld) for name, fld in fields if fld.media is not None]
     cls._all_fields = fields
     cls._deck_tags = getattr(cls, "tags", [])
     cls._deck_validators = getattr(cls, "validators", [])
@@ -488,6 +510,7 @@ class Deck:
     _field_attrs: ClassVar[list[str]]
     _pk_field_attr: ClassVar[str]
     _visible_fields: ClassVar[list[tuple[str, Field]]]
+    _media_fields: ClassVar[list[tuple[str, Field]]]
     _derived_order: ClassVar[list[tuple[str, Field]]]
     _all_fields: ClassVar[list[tuple[str, Field]]]
     _deck_tags: ClassVar[list[str | Tag]]
@@ -541,14 +564,9 @@ class Deck:
             log_info(f"  {derived_count} derived field{'s' if derived_count != 1 else ''}")
 
         # Resolve provenance config once
-        from ankitron.provenance import ProvenancePosition
+        from ankitron.provenance import is_provenance_enabled
 
-        prov_config: ProvenanceConfig | None = getattr(cls, "provenance", None)
-        prov_enabled = (
-            prov_config is not None
-            and prov_config.enabled
-            and prov_config.position != ProvenancePosition.NONE
-        )
+        prov_enabled = is_provenance_enabled(cls)
 
         # Collect and topologically sort sources
         source_entries = [

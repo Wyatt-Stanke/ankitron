@@ -32,6 +32,16 @@ class ProvenanceStyle(enum.Enum):
     DETAILED = "detailed"
 
 
+def is_provenance_enabled(cls: type) -> bool:
+    """Return True if provenance is enabled and configured to render on cards."""
+    prov_config: ProvenanceConfig | None = getattr(cls, "provenance", None)  # type: ignore[assignment]
+    return (
+        prov_config is not None
+        and prov_config.enabled
+        and prov_config.position != ProvenancePosition.NONE
+    )
+
+
 @dataclass
 class ProvenanceConfig:
     """Master configuration for provenance tracking and rendering."""

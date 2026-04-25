@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from ankitron.cache import Cache
     from ankitron.deck import Field as _Field
 
-from ankitron.enums import FieldRule, PKStrategy
+from ankitron.deck import FieldRule, PKStrategy
 from ankitron.logging import (
     console,
     log_cache_hit,

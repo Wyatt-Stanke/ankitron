@@ -137,8 +137,7 @@ class WikipediaSource:
             row: dict[str, str] = {}
             for attr_name, fld in fields:
                 param_name = fld._source_key or attr_name
-                aliases = []
-                value = self._extract_infobox_param(wikitext, param_name, aliases)
+                value = self._extract_infobox_param(wikitext, param_name)
                 row[attr_name] = value or ""
 
             if cache:
@@ -152,7 +151,6 @@ class WikipediaSource:
     def _extract_infobox_param(
         wikitext: str,
         param_name: str,
-        aliases: list[str] | None = None,
     ) -> str | None:
         """Extract a parameter value from a wikitext infobox."""
         try:
@@ -168,8 +166,7 @@ class WikipediaSource:
             if "infobox" not in tname:
                 continue
 
-            names_to_try = [param_name] + (aliases or [])
-            for name in names_to_try:
+            for name in [param_name]:
                 if template.has(name):
                     val = str(template.get(name).value).strip()
                     # Strip wiki markup links

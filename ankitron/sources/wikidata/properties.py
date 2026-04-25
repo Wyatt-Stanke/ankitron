@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from enum import Enum
+
+from ankitron.sources.wikidata.classes import _normalize_wikidata_id
 
 
 class PropertyValueType(Enum):
@@ -75,15 +76,7 @@ class _PropertyAccessor:
         return WikidataProperty(id=pid, value_type=vtype)
 
     def __call__(self, raw: str) -> WikidataProperty:
-        if not isinstance(raw, str):
-            raise TypeError(f"Expected a string, got {type(raw).__name__}")
-        # Normalize: add P prefix if missing
-        normalized = raw if raw.startswith("P") else f"P{raw}"
-        if not re.match(r"^P\d+$", normalized):
-            raise ValueError(
-                f"Invalid Wikidata property ID: {raw!r}. "
-                f"Expected format: 'P<number>' (e.g., 'P36' or '36')."
-            )
+        normalized = _normalize_wikidata_id(raw, "P", "property")
         return WikidataProperty(id=normalized, value_type=PropertyValueType.LITERAL)
 
 

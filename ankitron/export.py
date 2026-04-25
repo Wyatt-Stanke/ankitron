@@ -3,12 +3,12 @@ from __future__ import annotations
 import html
 import os
 import re
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import genanki
 
-from ankitron.enums import MediaType
+from ankitron.cache import MEDIA_CACHE_DIR
+from ankitron.media.generated import MediaType
 from ankitron.identity import generate_deck_id, generate_model_id, generate_note_id
 from ankitron.logging import (
     log_info,
@@ -17,6 +17,8 @@ from ankitron.logging import (
     make_progress,
     section_header,
 )
+from ankitron.provenance import is_provenance_enabled, provenance_to_json
+from ankitron.utils import get_pk_value
 
 if TYPE_CHECKING:
     from ankitron.deck import Deck, Tag
@@ -64,19 +66,14 @@ def resolve_tags(tag_list: list[str | Tag], row: dict) -> list[str]:
 def build_genanki_model(deck_cls: type[Deck]) -> genanki.Model:
     """Construct a genanki.Model from a Deck subclass's fields and cards."""
     from ankitron.deck import _FIELD_REF_PATTERN
-    from ankitron.provenance import ProvenanceConfig, ProvenancePosition, render_provenance_html
+    from ankitron.provenance import render_provenance_html
 
     model_id = generate_model_id(deck_cls.__qualname__)
 
-    gk_fields = [{"name": name} for name, f in deck_cls._all_fields if not f.internal]
+    gk_fields = [{"name": name} for name, _ in deck_cls._visible_fields]
 
     # Check provenance config
-    prov_config: ProvenanceConfig | None = getattr(deck_cls, "provenance", None)
-    prov_enabled = (
-        prov_config is not None
-        and prov_config.enabled
-        and prov_config.position != ProvenancePosition.NONE
-    )
+    prov_enabled = is_provenance_enabled(deck_cls)
 
     if prov_enabled:
         gk_fields.append({"name": "_ankitron_provenance"})
@@ -85,6 +82,7 @@ def build_genanki_model(deck_cls: type[Deck]) -> genanki.Model:
     for card_cls in deck_cls._deck_cards:
         if prov_enabled:
             card_fields = _FIELD_REF_PATTERN.findall(card_cls.front + card_cls.back)
+            prov_config = getattr(deck_cls, "provenance", None)
             card_cls.back += render_provenance_html(prov_config, card_fields or None)
 
         gk_templates.append(
@@ -132,7 +130,7 @@ def export_deck(deck_instance: Deck, path: str) -> None:
     pk_field_attr = deck_instance._pk_field_attr
     pk_values: list[str] = []
     for row in deck_instance._data:
-        pk_val = row.get(f"_pk_{pk_field_attr}", row.get(pk_field_attr, ""))
+        pk_val = get_pk_value(row, pk_field_attr)
         pk_values.append(pk_val)
 
     seen: dict[str, int] = {}
@@ -154,25 +152,14 @@ def export_deck(deck_instance: Deck, path: str) -> None:
     log_info(f"Generating {len(deck_instance._data)} notes...")
 
     # Build field attr name list in declaration order, excluding internal
-    visible_attrs = [name for name, f in deck_cls._all_fields if not f.internal]
+    visible_attrs = [name for name, _ in deck_cls._visible_fields]
 
     # Build map of media fields for bundling
-    media_fields = {
-        name: fld
-        for name, fld in deck_cls._all_fields
-        if fld.media is not None and not fld.internal
-    }
+    media_fields = {name: fld for name, fld in deck_cls._media_fields if not fld.internal}
     media_files: list[str] = []  # Paths of media files to bundle
 
     # Check provenance
-    from ankitron.provenance import ProvenanceConfig, ProvenancePosition, provenance_to_json
-
-    prov_config: ProvenanceConfig | None = getattr(deck_cls, "provenance", None)
-    prov_enabled = (
-        prov_config is not None
-        and prov_config.enabled
-        and prov_config.position != ProvenancePosition.NONE
-    )
+    prov_enabled = is_provenance_enabled(deck_cls)
     provenance_data = getattr(deck_instance, "_provenance", None)
 
     # Resolve tags
@@ -190,7 +177,7 @@ def export_deck(deck_instance: Deck, path: str) -> None:
         all_tags_set: set[str] = set()
 
         for row_idx, row in enumerate(deck_instance._data):
-            pk_val = row.get(f"_pk_{pk_field_attr}", row.get(pk_field_attr, ""))
+            pk_val = get_pk_value(row, pk_field_attr)
             note_id = generate_note_id(deck_cls.__qualname__, pk_val)
 
             # Process media fields: replace URL values with <img>/<sound> tags
@@ -212,12 +199,11 @@ def export_deck(deck_instance: Deck, path: str) -> None:
                         row[mf_name] = make_sound_tag(fname)
                 elif val.startswith(("http://", "https://")):
                     # URL-based media — attempt to find in cache
-                    cache_dir = Path.home() / ".cache" / "ankitron" / "media"
                     from ankitron.media.pipeline import generate_media_filename
 
                     ext = mf_fld.format.value if mf_fld.format else "png"
                     fname = generate_media_filename(deck_cls.__name__, pk_val, mf_name, ext)
-                    cached_path = cache_dir / fname
+                    cached_path = MEDIA_CACHE_DIR / fname
                     if cached_path.is_file():
                         media_files.append(str(cached_path))
                         if mf_fld.media == MediaType.IMAGE:

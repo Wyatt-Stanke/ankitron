@@ -8,14 +8,17 @@ takes a document or set of inputs and produces *many* rows.
 from __future__ import annotations
 
 import hashlib
-import json
-import os
-import re
 from typing import TYPE_CHECKING, Any
 
 from ankitron.ai.cache import AICache
 from ankitron.ai.prompts import SystemPrompt
 from ankitron.ai.types import BatchPolicy, CardSchema
+from ankitron.ai.utils import (
+    calculate_cost,
+    call_api_with_retry,
+    parse_json_response,
+    require_anthropic_client,
+)
 
 if TYPE_CHECKING:
     from ankitron.deck import Field
@@ -76,16 +79,7 @@ class AICardSource:
         refresh: bool = False,
     ) -> list[dict[str, str]]:
         """Generate rows via LLM call (or return cached result)."""
-        try:
-            import anthropic
-        except ImportError as err:
-            raise ImportError(
-                "AICardSource requires the 'ai' extra. Install with: pip install ankitron[ai]"
-            ) from err
-
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise RuntimeError("ANTHROPIC_API_KEY environment variable is required.")
+        client = require_anthropic_client("ai")
 
         deck_class = getattr(self, "_deck_qualname", "unknown")
         source_name = getattr(self, "_source_attr", "ai")
@@ -109,33 +103,19 @@ class AICardSource:
         system_text = SystemPrompt.resolve(self._system)
         user_prompt = self._build_generation_prompt(input_text)
 
-        client = anthropic.Anthropic(api_key=api_key)
-
-        response_text = ""
-        tokens_in = tokens_out = 0
-        for attempt in range(3):
-            try:
-                response = client.messages.create(
-                    model=self._model,
-                    max_tokens=4096,
-                    temperature=self._temperature,
-                    system=system_text,
-                    messages=[{"role": "user", "content": user_prompt}],
-                )
-                response_text = response.content[0].text.strip()
-                tokens_in = response.usage.input_tokens
-                tokens_out = response.usage.output_tokens
-                break
-            except Exception:
-                if attempt == 2:
-                    raise
-                import time
-
-                time.sleep(2**attempt)
+        response_text, tokens_in, tokens_out = call_api_with_retry(
+            client,
+            model=self._model,
+            system=system_text,
+            messages=[{"role": "user", "content": user_prompt}],
+            max_tokens=4096,
+            temperature=self._temperature,
+            on_failure="raise",
+        )
 
         # Parse the generated rows
         rows = self._parse_response(response_text)
-        cost = (tokens_in * 0.003 + tokens_out * 0.015) / 1000
+        cost = calculate_cost(tokens_in, tokens_out)
 
         # Cache the full result set
         self._ai_cache.put_card_source(
@@ -199,23 +179,7 @@ class AICardSource:
     @staticmethod
     def _parse_response(text: str) -> list[dict[str, Any]]:
         """Parse a JSON array response, tolerating markdown fences."""
-        cleaned = text.strip()
-        if cleaned.startswith("```"):
-            first_nl = cleaned.index("\n") if "\n" in cleaned else 3
-            cleaned = cleaned[first_nl + 1 :]
-            cleaned = cleaned.removesuffix("```")
-            cleaned = cleaned.strip()
-
-        # Remove trailing commas
-        cleaned = re.sub(r",\s*([}\]])", r"\1", cleaned)
-
-        try:
-            parsed = json.loads(cleaned)
-            if isinstance(parsed, list):
-                return parsed
-        except json.JSONDecodeError:
-            pass
-        return []
+        return parse_json_response(text)  # type: ignore[return-value]
 
     @staticmethod
     def _filter_fields(

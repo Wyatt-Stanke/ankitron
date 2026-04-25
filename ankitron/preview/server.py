@@ -12,13 +12,8 @@ from ankitron.preview.app import create_preview_app
 
 
 def _ensure_deps() -> None:
-    try:
-        import fastapi  # noqa: F401
-        import uvicorn  # noqa: F401
-    except ImportError as err:
-        raise ImportError(
-            "Live preview requires extra dependencies. Install with: pip install ankitron[preview]"
-        ) from err
+    from ankitron.dependencies import ensure_deps
+    ensure_deps(["fastapi", "uvicorn"], "preview")
 
 
 def create_app(filepath: str, deck_name: str | None = None) -> Any:

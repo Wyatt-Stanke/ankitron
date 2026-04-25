@@ -7,9 +7,12 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from pathlib import Path
 
-from ankitron.enums import FieldRule, MediaFormat, MediaType, Severity
+from ankitron.deck import FieldRule
 from ankitron.logging import log_info, log_success, log_warn
+from ankitron.media.generated import MediaFormat, MediaType
 from ankitron.transform import Transform, apply_transform_chain
+from ankitron.utils import get_pk_value
+from ankitron.validation.validators import Severity
 
 
 def _process_media_fields(
@@ -36,7 +39,8 @@ def _process_media_fields(
         return
 
     # Get cache directory
-    cache_dir = Path.home() / ".cache" / "ankitron" / "media"
+    from ankitron.cache import MEDIA_CACHE_DIR as cache_dir
+
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     for attr_name, fld in media_fields:
@@ -55,7 +59,7 @@ def _process_media_fields(
             if not url.startswith("http"):
                 continue
 
-            pk_val = row.get(f"_pk_{pk_field_attr}", row.get(pk_field_attr, ""))
+            pk_val = get_pk_value(row, pk_field_attr)
             ext = fld.format.value if fld.format else "png"
             filename = generate_media_filename(cls.__name__, pk_val, attr_name, ext)
             output_path = media_dir / filename
@@ -361,7 +365,7 @@ def _check_field_rules(cls: type, all_rows: list[dict[str, Any]]) -> None:
         for row in all_rows:
             val = row.get(attr_name)
             if val is None or (isinstance(val, str) and val.strip() == ""):
-                pk_val = row.get(f"_pk_{cls._pk_field_attr}", row.get(cls._pk_field_attr, "?"))
+                pk_val = get_pk_value(row, cls._pk_field_attr) or "?"
                 missing_pks.append(str(pk_val))
         if missing_pks:
             msg = (
@@ -398,7 +402,7 @@ def _apply_overrides(
     pk_attr = cls._pk_field_attr
     overrides_applied = 0
     for row_idx, row in enumerate(all_rows):
-        pk_val = row.get(f"_pk_{pk_attr}", row.get(pk_attr, ""))
+        pk_val = get_pk_value(row, pk_attr)
         if pk_val in cls._deck_overrides:
             for override_field, override_val in cls._deck_overrides[pk_val].items():
                 if prov_enabled and row_idx < len(all_provenance):
@@ -473,7 +477,7 @@ def _apply_derivations(
                 try:
                     val = fld._computed_fn(*input_vals)
                 except Exception as exc:
-                    pk_val = row.get(f"_pk_{cls._pk_field_attr}", row.get(cls._pk_field_attr, "?"))
+                    pk_val = get_pk_value(row, cls._pk_field_attr) or "?"
                     raise RuntimeError(
                         f"{cls.__name__}: computed field '{attr_name}' failed "
                         f"on row '{pk_val}': {type(exc).__name__}: {exc}."
@@ -535,10 +539,7 @@ def _apply_derivations(
                         try:
                             result_val = fld._transform.apply(coerced_in)
                         except Exception as exc:
-                            pk_val = row.get(
-                                f"_pk_{cls._pk_field_attr}",
-                                row.get(cls._pk_field_attr, "?"),
-                            )
+                            pk_val = get_pk_value(row, cls._pk_field_attr) or "?"
                             raise RuntimeError(
                                 f"{cls.__name__}: transform failed for field '{attr_name}' "
                                 f"on row '{pk_val}': {type(exc).__name__}: {exc}. "
@@ -569,10 +570,7 @@ def _apply_derivations(
                         try:
                             result_val = fld._transform(coerced_in)
                         except Exception as exc:
-                            pk_val = row.get(
-                                f"_pk_{cls._pk_field_attr}",
-                                row.get(cls._pk_field_attr, "?"),
-                            )
+                            pk_val = get_pk_value(row, cls._pk_field_attr) or "?"
                             raise RuntimeError(
                                 f"{cls.__name__}: transform failed for field '{attr_name}' "
                                 f"on row '{pk_val}': {type(exc).__name__}: {exc}. "

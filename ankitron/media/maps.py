@@ -10,7 +10,7 @@ Requires the `maps` extra: ``pip install ankitron[maps]``.
 from __future__ import annotations
 
 import contextlib
-import hashlib
+
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -24,21 +24,8 @@ _WEB_MERCATOR_HALF_CIRC = 20037508.34
 
 def _ensure_deps() -> None:
     """Check that map rendering dependencies are installed."""
-    missing = []
-    try:
-        import matplotlib as mpl  # noqa: F401
-    except ImportError:
-        missing.append("matplotlib")
-    try:
-        import contextily  # noqa: F401
-    except ImportError:
-        missing.append("contextily")
-
-    if missing:
-        raise ImportError(
-            f"Map rendering requires: {', '.join(missing)}. "
-            "Install with: pip install ankitron[maps]"
-        )
+    from ankitron.dependencies import ensure_deps
+    ensure_deps(["matplotlib", "contextily"], "maps")
 
 
 def render_map(
@@ -164,8 +151,9 @@ def _set_extent_from_point(ax: Any, lat: float, lon: float, zoom: int) -> None:
 
 def map_cache_key(lat: float, lon: float, config: MapConfig) -> str:
     """Generate a cache key for a map rendering."""
+    from ankitron.media.pipeline import make_cache_key
     data = (
         f"{lat:.6f},{lon:.6f},{config.zoom},{config.width},"
         f"{config.height},{config.style},{config.highlight_color}"
     )
-    return hashlib.sha256(data.encode()).hexdigest()[:16]
+    return make_cache_key(data)

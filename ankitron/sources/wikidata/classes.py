@@ -4,6 +4,32 @@ import re
 from dataclasses import dataclass
 
 
+def _normalize_wikidata_id(raw: str, prefix: str, id_type: str) -> str:
+    """Normalize and validate a Wikidata Q/P identifier.
+
+    Args:
+        raw: The raw string provided by the user (e.g. "Q35657", "35657").
+        prefix: The expected prefix letter ("Q" or "P").
+        id_type: Human-readable type name for error messages ("class" or "property").
+
+    Returns:
+        The normalized ID with prefix (e.g. "Q35657").
+
+    Raises:
+        TypeError: If raw is not a string.
+        ValueError: If the normalized ID doesn't match ``^<prefix>\\d+$``.
+    """
+    if not isinstance(raw, str):
+        raise TypeError(f"Expected a string, got {type(raw).__name__}")
+    normalized = raw if raw.startswith(prefix) else f"{prefix}{raw}"
+    if not re.match(rf"^{prefix}\d+$", normalized):
+        raise ValueError(
+            f"Invalid Wikidata {id_type} ID: {raw!r}. "
+            f"Expected format: '{prefix}<number>' (e.g., '{prefix}35657' or '35657')."
+        )
+    return normalized
+
+
 @dataclass(frozen=True)
 class WikidataClass:
     """Represents a Wikidata class (Q-item) identifier."""
@@ -55,14 +81,7 @@ class _ClassAccessor:
         return WikidataClass(id=_KNOWN_CLASSES[name])
 
     def __call__(self, raw: str) -> WikidataClass:
-        if not isinstance(raw, str):
-            raise TypeError(f"Expected a string, got {type(raw).__name__}")
-        normalized = raw if raw.startswith("Q") else f"Q{raw}"
-        if not re.match(r"^Q\d+$", normalized):
-            raise ValueError(
-                f"Invalid Wikidata class ID: {raw!r}. "
-                f"Expected format: 'Q<number>' (e.g., 'Q35657' or '35657')."
-            )
+        normalized = _normalize_wikidata_id(raw, "Q", "class")
         return WikidataClass(id=normalized)
 
 

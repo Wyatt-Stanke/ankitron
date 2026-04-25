@@ -10,6 +10,8 @@ import os
 import sys
 from typing import TYPE_CHECKING, Any
 
+from ankitron.utils import get_pk_value
+
 if TYPE_CHECKING:
     import argparse
 
@@ -231,16 +233,12 @@ def _export_merged(instances: list[Any], args: argparse.Namespace) -> None:
         pk_attr = cls._pk_field_attr
 
         # Check provenance config
-        prov_config: ProvenanceConfig | None = getattr(cls, "provenance", None)
-        prov_enabled = (
-            prov_config is not None
-            and prov_config.enabled
-            and prov_config.position != ProvenancePosition.NONE
-        )
+        from ankitron.provenance import is_provenance_enabled
+        prov_enabled = is_provenance_enabled(cls)
         provenance_data = getattr(instance, "_provenance", None)
 
         for row_idx, row in enumerate(instance._data or []):
-            pk_val = row.get(f"_pk_{pk_attr}", row.get(pk_attr, ""))
+            pk_val = get_pk_value(row, pk_attr)
             field_values = []
             for attr in visible_attrs:
                 field_def = next(fld for name, fld in cls._all_fields if name == attr)
@@ -617,7 +615,7 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
         pk_attr = deck_cls._pk_field_attr
         target_row = None
         for row in instance._data or []:
-            pk = row.get(f"_pk_{pk_attr}", row.get(pk_attr, ""))
+            pk = get_pk_value(row, pk_attr)
             if pk == args.pk:
                 target_row = row
                 break
@@ -629,7 +627,7 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
         target_provenance: dict[str, Any] = {}
         prov_rows = getattr(instance, "_provenance", None) or []
         for row_idx, row in enumerate(instance._data or []):
-            pk = row.get(f"_pk_{pk_attr}", row.get(pk_attr, ""))
+            pk = get_pk_value(row, pk_attr)
             if pk == args.pk:
                 if row_idx < len(prov_rows):
                     target_provenance = prov_rows[row_idx] or {}
@@ -809,7 +807,7 @@ def _cmd_review(args: argparse.Namespace) -> int:
 
         for idx_pos, i in enumerate(review_indices):
             row = data[i]
-            pk = row.get(f"_pk_{pk_attr}", row.get(pk_attr, "?"))
+            pk = get_pk_value(row, pk_attr) or "?"
             print(f"\n── Row {idx_pos + 1}/{len(review_indices)}: {pk} ──")
             for name, _fld in visible:
                 print(f"  {name}: {row.get(name, '')}")

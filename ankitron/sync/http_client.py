@@ -51,7 +51,7 @@ class AnkiWebClient:
             }
         )
 
-    def _post(self, path: str, data: bytes, *, _is_json: bool = True) -> bytes:
+    def _post(self, path: str, data: bytes) -> bytes:
         """Send a zstd-compressed POST and return the decompressed response.
 
         Handles 308 redirects by updating the base URL and retrying.

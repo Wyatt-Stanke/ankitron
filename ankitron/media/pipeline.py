@@ -14,17 +14,19 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ankitron.enums import MediaFormat
+from ankitron.media.generated import MediaFormat
 
 
 def _ensure_deps(what: str = "media") -> None:
     """Check that media dependencies are installed."""
-    try:
-        from PIL import Image  # noqa: F401
-    except ImportError as err:
-        raise ImportError(
-            f"ankitron[{what}] requires Pillow. Install with: pip install ankitron[{what}]"
-        ) from err
+    from ankitron.dependencies import ensure_deps
+
+    ensure_deps(["PIL"], what)
+
+
+def make_cache_key(data: str) -> str:
+    """Generate a 16-character hex cache key from *data* via SHA-256."""
+    return hashlib.sha256(data.encode()).hexdigest()[:16]
 
 
 def generate_media_filename(deck_name: str, pk: str, field_name: str, ext: str) -> str:

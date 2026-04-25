@@ -6,6 +6,7 @@ from typing import Any
 
 # TODO: Generate a cache dir that is best-practice crossplatform (Windows, MacOS, and Linux).
 CACHE_DIR = Path.home() / ".cache" / "ankitron"
+MEDIA_CACHE_DIR = CACHE_DIR / "media"
 # TODO: The TTL should be per-cache item rather than per-cache object.
 # The put() should accept a TTL, defaulting to DEFAULT_TTL.
 DEFAULT_TTL = 7 * 24 * 3600  # 7 days in seconds

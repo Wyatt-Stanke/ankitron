@@ -15,13 +15,11 @@ def start_watcher(filepath: str, host: str, port: int) -> Callable[[], None]:
 
     Returns a stop function to shut down the watcher.
     """
-    try:
-        from watchdog.events import FileSystemEvent, FileSystemEventHandler
-        from watchdog.observers import Observer
-    except ImportError as err:
-        raise ImportError(
-            "File watching requires watchdog. Install with: pip install ankitron[preview]"
-        ) from err
+    from ankitron.dependencies import ensure_deps
+    ensure_deps(["watchdog"], "preview")
+
+    from watchdog.events import FileSystemEvent, FileSystemEventHandler
+    from watchdog.observers import Observer
 
     filepath = os.path.abspath(filepath)
     watch_dir = os.path.dirname(filepath)

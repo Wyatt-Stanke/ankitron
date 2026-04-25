@@ -329,42 +329,27 @@ class _Abbreviate(Transform):
 
 
 class _Upper(Transform):
+    name = "upper"
+    description = "upper()"
+
     def _apply(self, value: Any) -> str:
         return str(value).upper()
 
-    @property
-    def name(self) -> str:
-        return "upper"
-
-    @property
-    def description(self) -> str:
-        return "upper()"
-
 
 class _Lower(Transform):
+    name = "lower"
+    description = "lower()"
+
     def _apply(self, value: Any) -> str:
         return str(value).lower()
 
-    @property
-    def name(self) -> str:
-        return "lower"
-
-    @property
-    def description(self) -> str:
-        return "lower()"
-
 
 class _Title(Transform):
+    name = "title"
+    description = "title()"
+
     def _apply(self, value: Any) -> str:
         return str(value).title()
-
-    @property
-    def name(self) -> str:
-        return "title"
-
-    @property
-    def description(self) -> str:
-        return "title()"
 
 
 class _Truncate(Transform):
@@ -425,42 +410,27 @@ class _RegexExtract(Transform):
 
 
 class _StripHtml(Transform):
+    name = "strip_html"
+    description = "strip_html()"
     _TAG_RE = re.compile(r"<[^>]+>")
 
     def _apply(self, value: Any) -> str:
         return self._TAG_RE.sub("", str(value))
 
-    @property
-    def name(self) -> str:
-        return "strip_html"
-
-    @property
-    def description(self) -> str:
-        return "strip_html()"
-
 
 class _StripWiki(Transform):
+    name = "strip_wiki"
+    description = "strip_wiki()"
     _LINK_RE = re.compile(r"\[\[(?:[^|\]]*\|)?([^\]]*)\]\]")
-
-    def _apply(self, value: Any) -> str:
-        s = str(value)
-        s = self._LINK_RE.sub(r"\1", s)
-        s = re.sub(r"'{2,3}", "", s)  # bold/italic
-        return s  # noqa: RET504
-
-    @property
-    def name(self) -> str:
-        return "strip_wiki"
-
-    @property
-    def description(self) -> str:
-        return "strip_wiki()"
 
 
 # ── Date transforms ────────────────────────────────────────────
 
 
 class _YearOnly(Transform):
+    name = "year_only"
+    description = "year_only()"
+
     def _apply(self, value: Any) -> int:
         if isinstance(value, (datetime, date)):
             return value.year
@@ -470,31 +440,21 @@ class _YearOnly(Transform):
             return int(m.group())
         return int(float(s))
 
-    @property
-    def name(self) -> str:
-        return "year_only"
-
-    @property
-    def description(self) -> str:
-        return "year_only()"
-
 
 class _Decade(Transform):
+    name = "decade"
+    description = "decade()"
+
     def _apply(self, value: Any) -> str:
         year = value.year if isinstance(value, (datetime, date)) else int(float(str(value)))
         decade = (year // 10) * 10
         return f"{decade}s"
 
-    @property
-    def name(self) -> str:
-        return "decade"
-
-    @property
-    def description(self) -> str:
-        return "decade()"
-
 
 class _RelativeDate(Transform):
+    name = "relative_date"
+    description = "relative_date()"
+
     def _apply(self, value: Any) -> str:
         if isinstance(value, datetime):
             dt = value
@@ -522,14 +482,6 @@ class _RelativeDate(Transform):
                 return f"{delta.days} days ago"
             return f"{months} month{'s' if months != 1 else ''} ago"
         return f"{years} year{'s' if years != 1 else ''} ago"
-
-    @property
-    def name(self) -> str:
-        return "relative_date"
-
-    @property
-    def description(self) -> str:
-        return "relative_date()"
 
 
 class _Era(Transform):

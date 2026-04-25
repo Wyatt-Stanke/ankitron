@@ -257,9 +257,6 @@ def build_parser() -> argparse.ArgumentParser:
     # ── doctor ──
     subparsers.add_parser("doctor", help="Diagnose installation and dependencies")
 
-    # ── addon ──
-    subparsers.add_parser("addon", help="Anki add-on management (stub)")
-
     # ── sync ──
     sync_p = subparsers.add_parser("sync", help="Sync .apkg files to AnkiWeb")
     sync_p.add_argument("files", nargs="+", help=".apkg files to sync")

@@ -9,7 +9,6 @@ Requires the `charts` extra: ``pip install ankitron[charts]``.
 
 from __future__ import annotations
 
-import hashlib
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -20,12 +19,8 @@ if TYPE_CHECKING:
 
 def _ensure_deps() -> None:
     """Check that chart rendering dependencies are installed."""
-    try:
-        import matplotlib as mpl  # noqa: F401
-    except ImportError as err:
-        raise ImportError(
-            "Chart rendering requires matplotlib. Install with: pip install ankitron[charts]"
-        ) from err
+    from ankitron.dependencies import ensure_deps
+    ensure_deps(["matplotlib"], "charts")
 
 
 def render_chart(
@@ -128,8 +123,9 @@ def chart_cache_key(
     highlight_index: int | None = None,
 ) -> str:
     """Generate a cache key for a chart rendering."""
+    from ankitron.media.pipeline import make_cache_key
     data = (
         f"{values},{config.chart_type},{config.width},"
         f"{config.height},{config.color},{highlight_index}"
     )
-    return hashlib.sha256(data.encode()).hexdigest()[:16]
+    return make_cache_key(data)

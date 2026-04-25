@@ -16,9 +16,6 @@ Requires the ``ai`` extra: ``pip install ankitron[ai]``.
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -28,6 +25,12 @@ from ankitron.ai.types import (
     AIExample,
     AIFieldConfig,
     BatchPolicy,
+)
+from ankitron.ai.utils import (
+    calculate_cost,
+    call_api_with_retry,
+    parse_json_response,
+    require_anthropic_client,
 )
 
 if TYPE_CHECKING:
@@ -149,18 +152,7 @@ class AISource:
         Uses the SQLite AI cache (version-gated, input-hash-keyed).
         Falls back to chunked API calls for cache misses.
         """
-        try:
-            import anthropic
-        except ImportError as err:
-            raise ImportError(
-                "AISource requires the 'ai' extra. Install with: pip install ankitron[ai]"
-            ) from err
-
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise RuntimeError("AISource requires the ANTHROPIC_API_KEY environment variable.")
-
-        client = anthropic.Anthropic(api_key=api_key)
+        client = require_anthropic_client("ai")
 
         existing_rows: list[dict[str, Any]] = getattr(self, "_linked_rows", [])
         if not existing_rows:
@@ -328,30 +320,15 @@ class AISource:
         choices: list[str] | None,
     ) -> tuple[str, float]:
         """Make a single API call with retry. Returns (text, cost_usd)."""
-        response_text = ""
-        cost = 0.0
-
-        for attempt in range(3):
-            try:
-                response = client.messages.create(
-                    model=self._model,
-                    max_tokens=1024,
-                    temperature=self._temperature,
-                    system=system,
-                    messages=messages,
-                )
-                response_text = response.content[0].text.strip()
-                tokens_in = response.usage.input_tokens
-                tokens_out = response.usage.output_tokens
-                cost = (tokens_in * 0.003 + tokens_out * 0.015) / 1000
-                break
-            except Exception:
-                if attempt == 2:
-                    response_text = ""
-                else:
-                    import time
-
-                    time.sleep(2**attempt)
+        response_text, tokens_in, tokens_out = call_api_with_retry(
+            client,
+            model=self._model,
+            system=system,
+            messages=messages,
+            temperature=self._temperature,
+            on_failure="empty",
+        )
+        cost = calculate_cost(tokens_in, tokens_out)
 
         # Validate against choices
         if choices and response_text and response_text not in choices:
@@ -404,24 +381,7 @@ class AISource:
     @staticmethod
     def _parse_chunk_response(text: str) -> list[dict[str, Any]]:
         """Parse a chunked JSON response, handling markdown fences and trailing commas."""
-        cleaned = text.strip()
-        # Strip markdown fences
-        if cleaned.startswith("```"):
-            first_nl = cleaned.index("\n") if "\n" in cleaned else 3
-            cleaned = cleaned[first_nl + 1 :]
-            cleaned = cleaned.removesuffix("```")
-            cleaned = cleaned.strip()
-
-        # Remove trailing commas before ] or }
-        cleaned = re.sub(r",\s*([}\]])", r"\1", cleaned)
-
-        try:
-            parsed = json.loads(cleaned)
-            if isinstance(parsed, list):
-                return parsed
-        except json.JSONDecodeError:
-            pass
-        return []
+        return parse_json_response(text)  # type: ignore[return-value]
 
     @staticmethod
     def _resolve_prompt(template: str, row: dict[str, Any]) -> str:
@@ -438,12 +398,3 @@ class AISource:
         """Extract the resolved input values referenced by a prompt template."""
         refs = re.findall(r"\{\{(\w+)\}\}", template)
         return {ref: str(row.get(ref, "")) for ref in refs}
-
-    @staticmethod
-    def _cache_key(model: str, prompt: str, temperature: float) -> str:
-        """Generate a stable cache key (legacy, for non-versioned lookups)."""
-        data = json.dumps(
-            {"model": model, "prompt": prompt, "temperature": temperature},
-            sort_keys=True,
-        )
-        return hashlib.sha256(data.encode()).hexdigest()
