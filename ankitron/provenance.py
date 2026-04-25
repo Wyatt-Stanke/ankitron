@@ -13,7 +13,6 @@ import enum
 import json
 from dataclasses import dataclass
 from dataclasses import field as dc_field
-from datetime import UTC, datetime
 from typing import Any
 
 
@@ -114,66 +113,82 @@ def provenance_to_json(
     pk_display: str,
     visible_fields: list[str] | None = None,
 ) -> str:
-    """Serialize provenance records to compressed JSON for embedding in Anki notes.
+    """Serialize provenance records to compact JSON for embedding in Anki notes.
 
-    Only includes fields listed in visible_fields (if provided).
-    Uses short keys for compression.
+    Format v1 (compact):
+      Envelope: {"v":1, "src":[type,name], "f":{...}}
+
+      Per-field values (union):
+        "key"              — source_key, dominant src, flags=0  (most common)
+        ["key",flags]      — dominant src, non-zero flags
+        ["key",flags,extra]— dominant src, extra={u?,m?,fn?}
+        ["key",flags,src]  — non-dominant src=[type,name,?url]
+        ["key",flags,src,extra] — non-dominant src + extra
+
+      Flags bitmask: 1=cached 2=overridden 4=ai 8=ai_reviewed 16=verified 32=flagged
     """
-    fields_data: dict[str, Any] = {}
+    from collections import Counter
+
     records = provenance
     if visible_fields is not None:
         records = {k: v for k, v in provenance.items() if k in visible_fields}
 
+    if not records:
+        return ""
+
+    # Hoist the most common (source_type, source_name) pair to the envelope
+    source_pairs = [
+        (rec.source_type or "", rec.source_name or "")
+        for rec in records.values()
+        if rec.source_type
+    ]
+    counter: Counter = Counter(source_pairs)
+    dominant = counter.most_common(1)[0][0] if counter else ("", "")
+
+    fields_data: dict[str, Any] = {}
     for fname, rec in records.items():
-        fd: dict[str, Any] = {
-            "value": rec.formatted_value or str(rec.raw_value) if rec.raw_value is not None else "",
-            "source": rec.source_type,
-            "source_name": rec.source_name,
-        }
-        if rec.source_key:
-            fd["source_key"] = rec.source_key
+        # Bitmask for boolean flags — omit entirely when 0
+        flags = 0
+        if rec.cached:       flags |= 1
+        if rec.overridden:   flags |= 2
+        if rec.ai_generated: flags |= 4
+        if rec.ai_reviewed:  flags |= 8
+        if rec.verification: flags |= 16
+        if rec.flagged:      flags |= 32
+
+        key = rec.source_key or ""
+        is_dominant = (rec.source_type or "", rec.source_name or "") == dominant
+
+        # Rare extras only present when needed
+        extra: dict[str, Any] = {}
         if rec.source_url:
-            fd["source_url"] = rec.source_url
-
-        # Raw value only if different from formatted
-        raw_str = str(rec.raw_value) if rec.raw_value is not None else ""
-        if raw_str and raw_str != fd["value"]:
-            fd["raw_value"] = rec.raw_value
-
-        # Transform chain
-        if rec.transform_chain:
-            fd["transforms"] = [
-                {"name": s.name, "desc": s.description, "in": s.input_value, "out": s.output_value}
-                for s in rec.transform_chain
-            ]
-
-        if rec.fmt:
-            fd["fmt"] = rec.fmt
-        if rec.fetched_at:
-            fd["fetched_at"] = rec.fetched_at.isoformat()
-        fd["cached"] = rec.cached
-        if rec.verification:
-            fd["verified"] = True
-        fd["overridden"] = rec.overridden
-        fd["ai"] = rec.ai_generated
-        if rec.ai_generated:
-            if rec.ai_model:
-                fd["ai_model"] = rec.ai_model
-            fd["ai_reviewed"] = rec.ai_reviewed
-        fd["flagged"] = rec.flagged
+            extra["u"] = rec.source_url
+        if rec.ai_generated and rec.ai_model:
+            extra["m"] = rec.ai_model
         if rec.flagged and rec.flag_note:
-            fd["flag_note"] = rec.flag_note
+            extra["fn"] = rec.flag_note
 
-        fields_data[fname] = fd
+        if is_dominant:
+            if flags == 0 and not extra:
+                fields_data[fname] = key          # simplest: bare string
+            elif extra:
+                fields_data[fname] = [key, flags, extra]
+            else:
+                fields_data[fname] = [key, flags]
+        else:
+            src_override: list[Any] = [rec.source_type or "", rec.source_name or ""]
+            if rec.source_url:
+                src_override.append(rec.source_url)
+                extra.pop("u", None)  # already encoded in src_override
+            if extra:
+                fields_data[fname] = [key, flags, src_override, extra]
+            else:
+                fields_data[fname] = [key, flags, src_override]
 
-    envelope = {
-        "version": 1,
-        "deck": deck_name,
-        "built_at": datetime.now(UTC).isoformat(),
-        "pk": pk,
-        "pk_display": pk_display,
-        "fields": fields_data,
-    }
+    envelope: dict[str, Any] = {"v": 1}
+    if dominant[0] or dominant[1]:
+        envelope["src"] = list(dominant)
+    envelope["f"] = fields_data
     return json.dumps(envelope, default=str, separators=(",", ":"))
 
 
@@ -206,33 +221,41 @@ _PROVENANCE_CSS = (
     "font-size:14px;padding:0 2px}"
 )
 
-_PROVENANCE_JS = """\
-(function(){
-try{
-var d=JSON.parse(document.getElementById('ankitron-prov-data').textContent);
-var c=document.getElementById('ankitron-prov-detail');
-var af=document.querySelector('.ankitron-prov');
-var fields=af&&af.dataset.fields?af.dataset.fields.split(','):null;
-var f=d.fields||{};
-var html='';
-for(var k in f){
-if(fields&&fields.indexOf(k)<0)continue;
-var v=f[k];
-html+='<div class="ankitron-prov-field">';
-html+='<span class="ankitron-prov-label">'+k+'</span> ';
-if(v.ai)html+='<span class="ankitron-prov-ai">AI</span>';
-if(v.source_url)html+='<br><span class="ankitron-prov-source"><a href="'+v.source_url+'" style="color:inherit">'+v.source_name+'</a>';
-else html+='<br><span class="ankitron-prov-source">'+v.source_name;
-if(v.source_key)html+=' → '+v.source_key;
-html+='</span>';
-if(v.overridden)html+='<br><span class="ankitron-prov-override">overridden</span>';
-if(v.verified)html+='<br><span class="ankitron-prov-verified">✓ verified</span>';
-if(v.flagged)html+='<br><span class="ankitron-prov-warn">⚠ flagged'+(v.flag_note?' — '+v.flag_note:'')+'</span>';
-html+='</div>';
-}
-c.innerHTML=html;
-}catch(e){}
-})();"""
+_PROVENANCE_JS = (
+    "(function(){"
+    "try{"
+    "var d=JSON.parse(document.getElementById('ankitron-prov-data').textContent);"
+    "var c=document.getElementById('ankitron-prov-detail');"
+    "var af=document.querySelector('.ankitron-prov');"
+    "var fields=af&&af.dataset.fields?af.dataset.fields.split(','):null;"
+    "var f=d.f||{};"
+    "var ds=d.src||['',''];"
+    "var html='';"
+    "for(var k in f){"
+    "if(fields&&fields.indexOf(k)<0)continue;"
+    "var v=f[k],key,fl=0,src=ds,ex={};"
+    "if(v===null){key='';}"
+    "else if(typeof v==='string'){key=v;}"
+    "else{key=v[0];fl=v[1]||0;"
+    "if(v[2]){if(Array.isArray(v[2])){src=v[2];ex=v[3]||{};}else{ex=v[2];}}}"
+    "var sn=src[1]||src[0]||'';"
+    "var su=(src&&src[2])||ex.u||null;"
+    "html+='<div class=\"ankitron-prov-field\">';"
+    "html+='<span class=\"ankitron-prov-label\">'+k+'</span> ';"
+    "if(fl&4)html+='<span class=\"ankitron-prov-ai\">AI</span>';"
+    "if(sn){html+='<br><span class=\"ankitron-prov-source\">';"
+    "if(su)html+='<a href=\"'+su+'\" style=\"color:inherit\">'+sn+'</a>';"
+    "else html+=sn;"
+    "if(key)html+=' \u2192 '+key;"
+    "html+='</span>';}"
+    "if(fl&2)html+='<br><span class=\"ankitron-prov-override\">overridden</span>';"
+    "if(fl&16)html+='<br><span class=\"ankitron-prov-verified\">\u2713 verified</span>';"
+    "if(fl&32)html+='<br><span class=\"ankitron-prov-warn\">\u26a0 flagged'+(ex.fn?' \u2014 '+ex.fn:'')+'</span>';"
+    "html+='</div>';}"
+    "c.innerHTML=html;"
+    "}catch(e){}"
+    "})();"
+)
 
 
 def render_provenance_html(config: ProvenanceConfig, card_fields: list[str] | None = None) -> str:
