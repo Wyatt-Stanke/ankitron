@@ -56,6 +56,7 @@ class Field:
 
     kind: FieldKind = FieldKind.TEXT
     fmt: str | None = None
+    html: bool = False
     pk: PKStrategy | None = None
     internal: bool = False
     unused_ok: bool = False

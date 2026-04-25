@@ -72,12 +72,12 @@ hr {
     csv = CSVSource(path="cards/school/spanish/2/vocabulary/lesson{lesson}+.tsv", delimiter="\t")
 
     spanish = csv.Field("Spanish", pk=PKStrategy.FIELD_VALUE)
-    example_sentence = csv.Field("ExampleSentence")
+    example_sentence = csv.Field("ExampleSentence", html=True)
     english = csv.Field("English")
     example_translation = csv.Field("ExampleTranslation")
     part_of_speech = csv.Field("PartOfSpeech")
     gender = csv.Field("Gender")
-    notes = csv.Field("Notes")
+    notes = csv.Field("Notes", html=True)
 
     class SpanishToEnglish(Card):
         front = (

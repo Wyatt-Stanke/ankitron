@@ -231,7 +231,11 @@ def export_deck(deck_instance: Deck, path: str) -> None:
 
                             row[mf_name] = make_sound_tag(fname)
 
-            field_values = [html.escape(row.get(attr, "")) for attr in visible_attrs]
+            field_values = []
+            for attr in visible_attrs:
+                field_def = next(fld for name, fld in deck_cls._all_fields if name == attr)
+                value = row.get(attr, "")
+                field_values.append(value if field_def.html else html.escape(value))
 
             # Append provenance JSON if enabled
             if prov_enabled and provenance_data and row_idx < len(provenance_data):
