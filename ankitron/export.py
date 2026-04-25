@@ -83,17 +83,15 @@ def build_genanki_model(deck_cls: type[Deck]) -> genanki.Model:
 
     gk_templates = []
     for card_cls in deck_cls._deck_cards:
-        back = '{{FrontSide}}<hr id="answer">' + card_cls.back
-
         if prov_enabled:
             card_fields = _FIELD_REF_PATTERN.findall(card_cls.front + card_cls.back)
-            back += render_provenance_html(prov_config, card_fields or None)
+            card_cls.back += render_provenance_html(prov_config, card_fields or None)
 
         gk_templates.append(
             {
                 "name": card_cls.__name__,
                 "qfmt": card_cls.front,
-                "afmt": back,
+                "afmt": card_cls.back,
             }
         )
 
