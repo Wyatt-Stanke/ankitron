@@ -241,7 +241,11 @@ def _export_merged(instances: list[Any], args: argparse.Namespace) -> None:
 
         for row_idx, row in enumerate(instance._data or []):
             pk_val = row.get(f"_pk_{pk_attr}", row.get(pk_attr, ""))
-            field_values = [html.escape(str(row.get(attr, ""))) for attr in visible_attrs]
+            field_values = []
+            for attr in visible_attrs:
+                field_def = next(fld for name, fld in cls._all_fields if name == attr)
+                value = row.get(attr, "")
+                field_values.append(value if field_def.html else html.escape(str(value)))
 
             # Append provenance JSON if the model includes it
             if prov_enabled:
